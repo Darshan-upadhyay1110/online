@@ -497,6 +497,21 @@ L.Map.Keyboard = L.Handler.extend({
 			return;
 		}
 
+		if (!this.modifier && (keyCode === this.keyCodes.pageUp || keyCode === this.keyCodes.pageDown) && ev.type === 'keydown') {
+			
+			var tableCell = document.getElementById('tb_spreadsheet-toolbar_right');
+			tableCell.style.verticalAlign = 'middle';
+			this._tabsCont = L.DomUtil.create('div', 'spreadsheet-tabs-container', tableCell);
+			var ssTabScroll = L.DomUtil.create('div', 'spreadsheet-tab-scroll', this._tabsCont);
+			ssTabScroll.id = 'spreadsheet-tab-scroll';
+			var tab = L.DomUtil.create('button', 'spreadsheet-tab', ssTabScroll);
+			L.DomEvent
+				.on(tab, 'click', L.DomEvent.stopPropagation)
+				.on(tab, 'click', L.DomEvent.stop)
+				.on(tab, 'click', this._setPart, this)
+				.on(tab, 'click', this._map.focus, this._map);
+			ev.preventDefault();
+		}
 		if (this._map.isEditMode()) {
 			docLayer._resetPreFetching();
 
@@ -783,7 +798,13 @@ L.Map.Keyboard = L.Handler.extend({
 		}
 		return false;
 	},
-
+	_setPart: function (e) {
+		var part =  e.target.id.match(/\d+/g)[0];
+		if (part !== null) {
+			this._map._docLayer._clearReferences();
+			this._map.setPart(parseInt(part), /*external:*/ false, /*calledFromSetPartHandler:*/ true);
+		}
+	},
 	readOnlyAllowedShortcuts: function(e) {
 		// Open keyboard shortcuts help page
 		if (this._isCtrlKey(e) && e.shiftKey && e.key === '?')
