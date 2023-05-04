@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
+
+#pragma once
+
 #include "config.h"
 
 #include "Protocol.hpp"
@@ -135,7 +138,7 @@ protected:
     virtual std::unique_ptr<http::Response>
     assertPutFileRequest(const Poco::Net::HTTPRequest& /*request*/)
     {
-        return nullptr;
+        return nullptr; // Success.
     }
 
     virtual void assertPutRelativeFileRequest(const Poco::Net::HTTPRequest& /*request*/)
@@ -147,7 +150,11 @@ protected:
     }
 
     /// Called when the server receives a Lock or Unlock request.
-    virtual void assertLockRequest(const Poco::Net::HTTPRequest& /*request*/) {}
+    virtual std::unique_ptr<http::Response>
+    assertLockRequest(const Poco::Net::HTTPRequest& /*request*/)
+    {
+        return nullptr; // Success.
+    }
 
     /// Given a URI, returns the filename.
     ///FIXME: this should be remove when we support multiple files properly.
@@ -290,6 +297,7 @@ protected:
             return handleGetFileRequest(request, socket);
         }
 
+        LOG_TST("FakeWOPIHost: not a wopi request, skipping: " << uriReq.getPath());
         return false;
     }
 
@@ -307,9 +315,21 @@ protected:
                 const std::string op = request.get("X-WOPI-Override", std::string());
                 if (op == "LOCK" || op == "UNLOCK")
                 {
-                    assertLockRequest(request);
-                    http::Response httpResponse(http::StatusCode::OK);
-                    socket->sendAndShutdown(httpResponse);
+                    std::unique_ptr<http::Response> response = assertLockRequest(request);
+                    if (!response)
+                    {
+                        LOG_TST("FakeWOPIHost: " << op << " operation on [" << uriReq.getPath()
+                                                 << "] succeeded 200 OK");
+                        http::Response httpResponse(http::StatusCode::OK);
+                        socket->sendAndShutdown(httpResponse);
+                    }
+                    else
+                    {
+                        LOG_TST("FakeWOPIHost: " << op << " operation on [" << uriReq.getPath()
+                                                 << "]: " << response->statusLine().statusCode()
+                                                 << ' ' << response->statusLine().reasonPhrase());
+                        socket->sendAndShutdown(*response);
+                    }
                 }
                 else
                 {
@@ -448,7 +468,13 @@ protected:
                 oss << '\t' << pair.first << ": " << pair.second << " / ";
             }
 
+            if (UnitBase::get().isFinished())
+                oss << "\nIgnoring as test has finished";
+
             LOG_TST(oss.str());
+
+            if (UnitBase::get().isFinished())
+                return false;
         }
 
         assertTargetTest(uriReq);

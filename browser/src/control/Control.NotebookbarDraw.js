@@ -46,7 +46,7 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 				'name': 'File',
 			},
 			{
-				'text': _('~Home'),
+				'text': _('Hom~e'),
 				'id': this.HOME_TAB_ID,
 				'name': 'Home',
 				'context': 'default|DrawText'
@@ -67,7 +67,7 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 				'name': 'Review'
 			},
 			{
-				'text': _('Format'),
+				'text': _('F~ormat'),
 				'id': '-3',
 				'name': 'Format',
 			},
@@ -78,7 +78,7 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 				'context': 'Table'
 			},
 			{
-				'text': _('~Draw'),
+				'text': _('Dra~w'),
 				'id': '-11',
 				'name': 'Draw',
 				'context': 'Draw|DrawLine|3DObject|MultiObject|Graphic|DrawFontwork'
@@ -117,6 +117,7 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 		var hasPrint = !this._map['wopi'].HidePrintOption;
 		var hasRepair = !this._map['wopi'].HideRepairOption;
 		var hasSaveAs = !this._map['wopi'].UserCanNotWriteRelative;
+		var hideDownload = this._map['wopi'].HideExportOption;
 		var hasShare = this._map['wopi'].EnableShare;
 		var hasSave = !this._map['wopi'].HideSaveOption;
 
@@ -153,16 +154,18 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 					hasShare ?
 						{
 							'id': 'ShareAs',
-							'type': 'menubartoolitem',
+							'type': 'customtoolitem',
 							'text': _('Share'),
-							'command': '.uno:shareas'
+							'command': 'shareas',
+							'inlineLabel': true
 						} : {},
 					hasRevisionHistory ?
 						{
 							'id': 'Rev-History',
-							'type': 'menubartoolitem',
+							'type': 'customtoolitem',
 							'text': _('See history'),
-							'command': '.uno:rev-history'
+							'command': 'rev-history',
+							'inlineLabel': true
 						} : {},
 				],
 				'vertical': 'true'
@@ -174,7 +177,7 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 					'text': _UNO('.uno:Print', 'presentation'),
 					'command': '.uno:Print'
 				} : {},
-			{
+			hideDownload ? {} : {
 				'id': 'file-downloadas-odg-downloadas-png',
 				'type': 'container',
 				'children': [
@@ -198,10 +201,10 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 				'type': 'container',
 				'children': [
 					{
-						'id': 'exportpdf',
+						'id': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf',
 						'type': 'customtoolitem',
 						'text': _('PDF Document (.pdf)'),
-						'command': 'exportpdf',
+						'command': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf',
 						'inlineLabel': true
 					},
 					hasRepair? {
@@ -231,7 +234,15 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 	},
 
 	getViewTab: function() {
+		var isTablet = window.mode.isTablet();
 		var content = [
+			isTablet ?
+				{
+					'id': 'closemobile',
+					'type': 'bigcustomtoolitem',
+					'text': _('Read mode'),
+					'command': 'closetablet',
+				} : {},
 			{
 				'id': 'fullscreen',
 				'type': 'bigtoolitem',
@@ -283,6 +294,11 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 				'type': 'menubartoolitem',
 				'text': _('Status Bar'),
 				'command': _('Show Status Bar')
+			},
+			{
+				'id':'toggledarktheme',
+				'type': 'bigmenubartoolitem',
+				'text': _('Dark Mode')
 			},
 			{
 				'type': 'bigtoolitem',
@@ -912,10 +928,16 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 				'vertical': 'true'
 			},
 			{
-				'type': 'bigtoolitem',
+				'id': 'HyperlinkDialog',
+				'type': 'bigcustomtoolitem',
 				'text': _UNO('.uno:HyperlinkDialog'),
-				'command': '.uno:HyperlinkDialog'
+				'command': 'hyperlinkdialog'
 			},
+			(this._map['wopi'].EnableRemoteLinkPicker) ? {
+				'type': 'bigcustomtoolitem',
+				'text': _('Smart Picker'),
+				'command': 'remotelink'
+			} : {},
 			{
 				'type': 'container',
 				'children': [
@@ -1033,9 +1055,10 @@ L.Control.NotebookbarDraw = L.Control.NotebookbarImpress.extend({
 						'type': 'toolbox',
 						'children': [
 							{
-								'type': 'toolitem',
+								'id': 'CharmapControl',
+								'type': 'customtoolitem',
 								'text': _UNO('.uno:CharmapControl'),
-								'command': '.uno:CharmapControl'
+								'command': 'charmapcontrol'
 							}
 						]
 					},

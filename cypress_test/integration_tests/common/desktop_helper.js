@@ -302,7 +302,11 @@ function insertMultipleComment(docType, numberOfComments = 1, isMobile = false) 
 	}
 
 	if (docType === 'writer' && mode !== 'notebookbar') {
-		cy.get('#toolbar-up .w2ui-scroll-right').click();
+		cy.get('#toolbar-up .w2ui-scroll-right').then($button => {
+			if ($button.is(':visible'))	{
+				$button.click();
+			}
+		});
 	}
 
 	for (var n=0;n<numberOfComments;n++) {
@@ -320,9 +324,9 @@ function insertMultipleComment(docType, numberOfComments = 1, isMobile = false) 
 		cy.get('.cool-annotation-table').should('exist');
 
 		if (isMobile) {
-			cy.get('#new-mobile-comment-input-area').type('some text' + n);
+			cy.get('#input-modal-input').type('some text' + n);
 
-			cy.get('.vex-dialog-buttons .button-primary').click();
+			cy.get('#response-ok').click();
 		} else {
 			cy.get('#annotation-modify-textarea-new').type('some text' + n);
 

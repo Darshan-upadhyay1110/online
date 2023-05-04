@@ -7,6 +7,11 @@ check_PROGRAMS = fakesockettest
 
 noinst_PROGRAMS = fakesockettest unittest unithttplib
 
+include_paths = ${ZLIB_CFLAGS} ${ZSTD_CFLAGS} ${PNG_CFLAGS}
+if ENABLE_SSL
+include_paths += ${OPENSSL_CFLAGS}
+endif
+
 AM_CXXFLAGS = $(CPPUNIT_CFLAGS) -DTDOC=\"$(abs_top_srcdir)/test/data\" \
 	-I${top_srcdir}/common -I${top_srcdir}/net -I${top_srcdir}/wsd -I${top_srcdir}/kit \
 	-I${top_srcdir} -I${top_srcdir}/test \
@@ -25,36 +30,33 @@ AM_CXXFLAGS = $(CPPUNIT_CFLAGS) -DTDOC=\"$(abs_top_srcdir)/test/data\" \
 all_la_unit_tests = \
 	unit-tiletest.la \
 	unit-wopi-async-slow.la \
-	unit-wopi-stuck-save.la \
-	unit-insert-delete.la \
 	unit-wopi-fail-upload.la \
-	unit-httpws.la \
-	unit-password-protected.la \
-	unit-wopi-ownertermination.la \
-	unit-crash.la \
-	unit-wopi-save-on-exit.la \
-	unit-wopi-documentconflict.la \
-	unit-wopi-fileurl.la \
 	unit-each-view.la \
-	unit-close.la \
-	unit-integration.la \
-	unit-uno-command.la \
+	unit-wopi-stuck-save.la \
 	unit-load-torture.la \
 	unit-copy-paste.la \
+	unit-httpws.la \
+	unit-crash.la \
+	unit-wopi-fileurl.la \
+	unit-wopi-save-on-exit.la \
+	unit-integration.la \
+	unit-insert-delete.la \
+	unit-password-protected.la \
+	unit-wopi-ownertermination.la \
+	unit-wopi-documentconflict.la \
+	unit-close.la \
+	unit-uno-command.la \
+	unit-wopi-httpredirect.la \
+	unit-wopi-httpheaders.la \
 	unit-http.la \
 	unit-wopi-temp.la \
 	unit-wopi.la \
-	unit-storage.la \
-	unit-wopi-saveas-with-encoded-file-name.la \
 	unit_wopi_watermark.la \
 	unit-wopi-crash-modified.la \
 	unit-oauth.la \
-	unit-wopi-saveas.la \
 	unit-calc.la \
 	unit-wopi-languages.la \
 	unit-wopi-versionrestore.la \
-	unit_wopi_renamefile.la \
-	unit-wopi-async-upload-modifyclose.la \
 	unit-convert.la \
 	unit-rendering-options.la \
 	unit-paste.la \
@@ -64,15 +66,18 @@ all_la_unit_tests = \
 	unit-render-shape.la \
 	unit-cursor.la \
 	unit-session.la \
-	unit-wopi-httpheaders.la \
-	unit-load.la \
 	unit-wopi-lock.la \
 	unit-wopi-unlock.la \
-	unit-wopi-httpredirect.la \
-	unit-wopi-loadencoded.la \
-	unit-prefork.la \
 	unit-render-search-result.la \
 	unit-tiff-load.la \
+	unit-wopi-saveas-with-encoded-file-name.la \
+	unit-load.la \
+	unit-storage.la \
+	unit-wopi-async-upload-modifyclose.la \
+	unit-wopi-saveas.la \
+	unit_wopi_renamefile.la \
+	unit-wopi-loadencoded.la \
+	unit-prefork.la \
 	unit-bad-doc-load.la \
 	unit-hosting.la \
 	unit-timeout.la \
@@ -109,7 +114,7 @@ wsd_sources = \
             ../wsd/TileCache.cpp \
             ../wsd/ProofKey.cpp
 
-test_base_source = \
+test_base_sources = \
 	TileQueueTests.cpp \
 	RequestDetailsTests.cpp \
 	StringVectorTests.cpp \
@@ -145,10 +150,10 @@ unithttplib_LDADD = $(CPPUNIT_LIBS)
 
 unittest_CPPFLAGS = -I$(top_srcdir) -DBUILDING_TESTS -DSTANDALONE_CPPUNIT -g
 unittest_SOURCES = \
-    $(test_base_source) \
+	$(test_base_sources) \
 	$(common_sources) \
-    ../wsd/TestStubs.cpp \
-    test.cpp
+	../wsd/TestStubs.cpp \
+	test.cpp
 
 unittest_LDADD = $(CPPUNIT_LIBS)
 unit_base_la_LIBADD = $(CPPUNIT_LIBS)
@@ -166,7 +171,7 @@ fakesockettest_SOURCES = fakesockettest.cpp  ../net/FakeSocket.cpp ../common/Dum
 fakesockettest_LDADD = $(CPPUNIT_LIBS)
 
 # old-style unit tests - bootstrapped via UnitClient
-unit_base_la_SOURCES = UnitClient.cpp ${test_base_source}
+unit_base_la_SOURCES = UnitClient.cpp ${test_base_sources}
 unit_tiletest_la_SOURCES = UnitClient.cpp TileCacheTests.cpp
 unit_tiletest_la_LIBADD = $(CPPUNIT_LIBS)
 unit_integration_la_SOURCES = UnitClient.cpp integration-http-server.cpp

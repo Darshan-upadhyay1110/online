@@ -60,13 +60,17 @@ public:
 
         if (isClient)
         {
+            LOG_TRC("Setting SSL into connect state");
             SSL_set_connect_state(_ssl);
             if (SSL_connect(_ssl) == 0)
                 LOG_DBG("SslStreamSocket connect #" << getFD() << " failed ");
             // else -1 is quite possibly SSL_ERROR_WANT_READ
         }
         else // We are a server-side socket.
+        {
+            LOG_TRC("Setting SSL into accept state");
             SSL_set_accept_state(_ssl);
+        }
     }
 
     ~SslStreamSocket()
@@ -119,7 +123,10 @@ public:
 
         const int rc = doHandshake();
         if (rc <= 0)
+        {
+            // 0 means shutdown.
             return rc;
+        }
 
         // Default implementation.
         return StreamSocket::readIncomingData();
@@ -132,6 +139,7 @@ public:
         const int rc = doHandshake();
         if (rc <= 0)
         {
+            // 0 means shutdown.
             return rc;
         }
 
@@ -226,7 +234,10 @@ private:
             {
                 rc = handleSslState(rc, "handshake");
                 if (rc <= 0)
-                    return rc != 0;
+                {
+                    // 0 means shutdown.
+                    return rc;
+                }
             }
 
             if (rc == 1)
@@ -240,8 +251,13 @@ private:
                 {
                     LOG_WRN("Failed to verify the certificate of [" << hostname() << ']');
                     closeConnection();
-                    return 0;
+                    return 0; // Connection is closed.
                 }
+            }
+            else
+            {
+                LOG_ERR("Unexpected return code from SSL_do_handshake: " << rc);
+                return rc;
             }
         }
 

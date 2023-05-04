@@ -396,7 +396,7 @@ int64_t Request::readData(const char* p, const int64_t len)
 #ifdef DEBUG_HTTP
             LOG_TRC("After Header: "
                     << available << " bytes availble\n"
-                    << Util::dumpHex(std::string(p, std::min(available, 1 * 1024L))));
+                    << Util::dumpHex(std::string(p, std::min(available, 1 * 1024UL))));
 #endif //DEBUG_HTTP
         }
 
@@ -651,7 +651,7 @@ std::shared_ptr<Session> Session::create(std::string host, Protocol protocol, in
     std::string portString;
     if (!net::parseUri(host, scheme, hostname, portString))
     {
-        LOG_ERR("Invalid URI [" << host << "] to http::Session::create.");
+        LOG_ERR_S("Invalid URI [" << host << "] to http::Session::create");
         throw std::runtime_error("Invalid URI [" + host + "] to http::Session::create.");
     }
 

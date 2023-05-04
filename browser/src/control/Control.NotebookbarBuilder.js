@@ -35,13 +35,11 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		this._toolitemHandlers['.uno:Color'] = this._colorControl;
 		this._toolitemHandlers['.uno:FillColor'] = this._colorControl;
 
-		this._toolitemHandlers['.uno:HyperlinkDialog'] = this._insertHyperlinkControl;
 		this._toolitemHandlers['.uno:InsertTable'] = this._insertTableControl;
 		this._toolitemHandlers['.uno:InsertGraphic'] = this._insertGraphicControl;
 		this._toolitemHandlers['.uno:InsertAnnotation'] = this._insertAnnotationControl;
 		this._toolitemHandlers['.uno:LineSpacing'] = this._lineSpacingControl;
 		this._toolitemHandlers['.uno:CharSpacing'] = this._CharSpacing;
-		this._toolitemHandlers['.uno:CharmapControl'] = this._symbolControl;
 		this._toolitemHandlers['.uno:Cut'] = this._clipboardButtonControl;
 		this._toolitemHandlers['.uno:Copy'] = this._clipboardButtonControl;
 		this._toolitemHandlers['.uno:Paste'] = this._clipboardButtonControl;
@@ -49,18 +47,14 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		this._toolitemHandlers['.uno:ConditionalFormatMenu'] = this._conditionalFormatControl;
 		this._toolitemHandlers['.uno:SetBorderStyle'] = this._borderStyleControl;
 		this._toolitemHandlers['.uno:SetDefault'] = this._formattingControl;
-		this._toolitemHandlers['.uno:Presentation'] = this._startPresentationControl;
 		this._toolitemHandlers['.uno:Save'] = this._saveControl;
 		this._toolitemHandlers['.uno:SaveAs'] = this._saveAsControl;
-		this._toolitemHandlers['.uno:shareas'] = this._shareAsControl;
 		this._toolitemHandlers['.uno:Print'] = this._printControl;
-		this._toolitemHandlers['.uno:rev-history'] = this._revHistoryControl;
 		this._toolitemHandlers['.uno:InsertPageHeader'] = this._headerFooterControl;
 		this._toolitemHandlers['.uno:InsertPageFooter'] = this._headerFooterControl;
 		this._toolitemHandlers['.uno:Text'] = this._insertTextBoxControl;
 		this._toolitemHandlers['.uno:DrawText'] = this._insertTextBoxControl;
 		this._toolitemHandlers['.uno:VerticalText'] = this._insertTextBoxControl;
-		this._toolitemHandlers['.uno:ShowResolvedAnnotations'] = this._showResolvedAnnotationsControl;
 		this._toolitemHandlers['.uno:OnlineHelp'] = this._onlineHelpControl;
 		this._toolitemHandlers['.uno:ForumHelp'] = this._onlineHelpControl;
 		this._toolitemHandlers['.uno:KeyboardShortcuts'] = this._onlineHelpControl;
@@ -234,9 +228,9 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		if (commandName === '.uno:CharFontName') {
 			if (window.ThisIsTheiOSApp) {
 				if (state === '')
-					$('#fontnamecombobox').html(_('Font Name'));
+					$('#fontnamecomboboxios').html(_('Font Name'));
 				else
-					$('#fontnamecombobox').html(state);
+					$('#fontnamecomboboxios').html(state);
 				window.LastSetiOSFontNameButtonFont = state;
 			}
 		} else if (commandName === '.uno:StyleApply') {
@@ -255,12 +249,14 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 	},
 
 	_createiOsFontButton: function(parentContainer, data, builder) {
-		var table = L.DomUtil.createWithId('div', 'fontnamecombobox', parentContainer);
+		// Fix issue #5838 Use unique IDs for font name combobox elements
+		var table = L.DomUtil.createWithId('div', data.id, parentContainer);
 		var row = L.DomUtil.create('div', 'notebookbar row', table);
-		var button = L.DomUtil.createWithId('button', data.id, row);
+		var button = L.DomUtil.createWithId('button', data.id + 'ios', row);
 
 		$(table).addClass('select2 select2-container select2-container--default');
-		$(row).addClass('select2-selection select2-selection--single');
+		// Fix issue #5838 Don't add the "select2-selection--single" class
+		$(row).addClass('select2-selection');
 		$(button).addClass('select2-selection__rendered');
 
 		if (data.selectedEntries.length && data.entries[data.selectedEntries[0]])
@@ -362,9 +358,13 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 			}
 
 			$(tabs[t]).addClass('selected');
+			tabs[t].setAttribute('aria-selected', 'true');
+			tabs[t].removeAttribute('tabindex');
 			for (var i = 0; i < tabs.length; i++) {
 				if (i !== t) {
 					$(tabs[i]).removeClass('selected');
+					tabs[i].setAttribute('aria-selected', 'false');
+					tabs[i].tabIndex = -1;
 					$(tabs[i]).prop('title', '');
 					$(contentDivs[i]).hide();
 				}
@@ -373,9 +373,13 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 			$(window).resize();
 			builder.wizard.selectedTab(tabIds[t]);
 
-			// don't lose focus on tab change
-			event.preventDefault();
-			builder.map.focus();
+			// Keep focus if user is navigating via keyboard.
+			if (!tabs[t].enterPressed) {
+				// don't lose focus on tab change
+				event.preventDefault();
+				builder.map.focus();
+				t.enterPressed = false;
+			}
 		};
 	},
 
@@ -504,14 +508,14 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 					'text': _('Word 2003 Document (.doc)')
 				},
 				{
-					'id': 'exportepub',
+					'id': !window.ThisIsAMobileApp ? 'exportepub' : 'downloadas-epub',
 					'text': _('EPUB (.epub)'),
-					'command': 'exportepub'
+					'command': !window.ThisIsAMobileApp ? 'exportepub' : 'downloadas-epub'
 				},
 				{
-					'id': 'exportpdf',
+					'id': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf',
 					'text': _('PDF Document (.pdf)'),
-					'command': 'exportpdf'
+					'command': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf'
 				}
 			];
 		} else if (docType === 'spreadsheet') {
@@ -533,9 +537,9 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 					'text': _('CSV File (.csv)')
 				},
 				{
-					'id': 'exportpdf',
+					'id': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf',
 					'text': _('PDF Document (.pdf)'),
-					'command': 'exportpdf',
+					'command': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf'
 				}
 			];
 		} else if (docType === 'presentation') {
@@ -557,9 +561,9 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 					'text': _('PowerPoint 2003 Presentation (.ppt)')
 				},
 				{
-					'id': 'exportpdf',
+					'id': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf',
 					'text': _('PDF Document (.pdf)'),
-					'command': 'exportpdf',
+					'command': !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf'
 				}
 			];
 		}
@@ -676,16 +680,6 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		return submenuOpts;
 	},
 
-	_insertHyperlinkControl: function(parentContainer, data, builder) {
-		var control = builder._unoToolButton(parentContainer, data, builder);
-
-		$(control.container).unbind('click.toolbutton');
-		$(control.container).click(function () {
-			builder.map.showHyperlinkDialog();
-		});
-		builder._preventDocumentLosingFocusOnClick(control.container);
-	},
-
 	_headerFooterControl: function(parentContainer, data, builder) {
 		var control = builder._unoToolButton(parentContainer, data, builder);
 
@@ -706,19 +700,6 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		$(control.container).unbind('click.toolbutton');
 		$(control.container).click(function () {
 			builder.map.sendUnoCommand(data.command + '?CreateDirectly:bool=true');
-		});
-		builder._preventDocumentLosingFocusOnClick(control.container);
-	},
-
-	_showResolvedAnnotationsControl: function(parentContainer, data, builder) {
-		var control = builder._unoToolButton(parentContainer, data, builder);
-
-		$(control.container).unbind('click.toolbutton');
-		$(control.container).click(function () {
-			var items = builder.map['stateChangeHandler'];
-			var val = items.getItemValue('.uno:ShowResolvedAnnotations');
-			val = (val === 'true' || val === true);
-			builder.map.showResolvedComments(!val);
 		});
 		builder._preventDocumentLosingFocusOnClick(control.container);
 	},
@@ -991,26 +972,6 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		builder._preventDocumentLosingFocusOnClick(control.container);
 	},
 
-	_symbolControl: function(parentContainer, data, builder) {
-		var control = builder._unoToolButton(parentContainer, data, builder);
-
-		$(control.container).unbind('click.toolbutton');
-		$(control.container).click(function () {
-			builder.map.sendUnoCommand('.uno:InsertSymbol');
-		});
-		builder._preventDocumentLosingFocusOnClick(control.container);
-	},
-
-	_startPresentationControl: function(parentContainer, data, builder) {
-		var control = builder._unoToolButton(parentContainer, data, builder);
-
-		$(control.container).unbind('click.toolbutton');
-		$(control.container).click(function () {
-			builder.map.fire('fullscreen');
-		});
-		builder._preventDocumentLosingFocusOnClick(control.container);
-	},
-
 	_saveControl: function(parentContainer, data, builder) {
 		var control = builder._unoToolButton(parentContainer, data, builder);
 
@@ -1038,16 +999,6 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		builder._preventDocumentLosingFocusOnClick(control.container);
 	},
 
-	_shareAsControl: function(parentContainer, data, builder) {
-		var control = builder._unoToolButton(parentContainer, data, builder);
-
-		$(control.container).unbind('click.toolbutton');
-		$(control.container).click(function () {
-			builder.map.openShare();
-		});
-		builder._preventDocumentLosingFocusOnClick(control.container);
-	},
-
 	_printControl: function(parentContainer, data, builder) {
 		data.text = data.text.replace('...', '');
 		var control = builder._unoToolButton(parentContainer, data, builder);
@@ -1055,16 +1006,6 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		$(control.container).unbind('click.toolbutton');
 		$(control.container).click(function () {
 			builder.map.print();
-		});
-		builder._preventDocumentLosingFocusOnClick(control.container);
-	},
-
-	_revHistoryControl: function(parentContainer, data, builder) {
-		var control = builder._unoToolButton(parentContainer, data, builder);
-
-		$(control.container).unbind('click.toolbutton');
-		$(control.container).click(function () {
-			builder.map.openRevisionHistory();
 		});
 		builder._preventDocumentLosingFocusOnClick(control.container);
 	},
@@ -1133,6 +1074,7 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 				$(table).addClass(this.options.cssClass);
 				$(table).addClass('vertical');
 				var childObject = L.DomUtil.create('div', 'row ' + this.options.cssClass, table);
+				childObject.id = tableId ? tableId + '-row' : '';
 			} else {
 				childObject = td;
 			}

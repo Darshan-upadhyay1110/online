@@ -38,7 +38,7 @@ JQUERY_LIGHTNESS_IMAGE_PATH = $(srcdir)/images/jquery-ui-lightness
 JQUERY_LIGHTNESS_IMAGES = $(wildcard $(JQUERY_LIGHTNESS_IMAGE_PATH)/*.png)
 JQUERY_LIGHTNESS_DIST_IMAGES = $(patsubst $(JQUERY_LIGHTNESS_IMAGE_PATH)/%.png,$(DIST_FOLDER)/images/%.png,$(JQUERY_LIGHTNESS_IMAGES))
 
-JQUERY_MINIFIED_IMAGE_PATH = node_modules/jquery-ui-dist/images
+JQUERY_MINIFIED_IMAGE_PATH = node_modules/jquery-ui/themes/base/images
 JQUERY_MINIFIED_IMAGES = $(wildcard $(JQUERY_MINIFIED_IMAGE_PATH)/*.png)
 JQUERY_MINIFIED_DIST_IMAGES = $(patsubst $(JQUERY_MINIFIED_IMAGE_PATH)/%.png,$(DIST_FOLDER)/images/%.png,$(JQUERY_MINIFIED_IMAGES))
 
@@ -111,7 +111,6 @@ NODE_MODULES_SRC =\
 	autolinker@3.14.1 \
 	json-js@1.1.2 \
 	select2@4.0.13 \
-	vex-js@4.1.0 \
 	l10n-for-node@0.0.1 \
 	@braintree/sanitize-url@6.0.0
 
@@ -122,6 +121,7 @@ COOL_CSS_LST =\
 	$(srcdir)/css/leaflet-spinner.css \
 	$(srcdir)/css/selectionMarkers.css \
 	$(srcdir)/css/color-palette.css \
+	$(srcdir)/css/color-palette-dark.css \
 	$(srcdir)/css/cool.css \
 	$(srcdir)/css/toolbar.css \
 	$(srcdir)/css/partsPreviewControl.css \
@@ -134,9 +134,6 @@ COOL_CSS_LST =\
 	$(srcdir)/css/editor.css \
 	$(srcdir)/css/iframedialog.css \
 	$(builddir)/node_modules/jquery-contextmenu/dist/jquery.contextMenu.css \
-	$(builddir)/node_modules/vex-js/dist/css/vex.css \
-	$(builddir)/node_modules/vex-js/dist/css/vex-theme-plain.css \
-	$(builddir)/node_modules/vex-js/dist/css/vex-theme-bottom-right-corner.css \
 	$(builddir)/node_modules/smartmenus/dist/css/sm-core-css.css \
 	$(builddir)/node_modules/smartmenus/dist/css/sm-simple/sm-simple.css \
 	$(srcdir)/css/welcome.css \
@@ -146,7 +143,6 @@ COOL_CSS_LST =\
 	$(srcdir)/css/btns.css \
 	$(srcdir)/css/notebookbar.css \
 	$(srcdir)/css/jssidebar.css \
-	$(srcdir)/css/override-vex.css \
 	$(srcdir)/css/override-smartmenus.css \
 	$(srcdir)/css/jquery-ui-lightness.css \
 	$(srcdir)/css/infobar.css
@@ -163,7 +159,8 @@ NODE_MODULES_JS =\
 	node_modules/jquery/dist/jquery.js \
 	node_modules/jquery-mousewheel/jquery.mousewheel.js \
 	node_modules/jquery-contextmenu/dist/jquery.contextMenu.js \
-	node_modules/jquery-ui-dist/jquery-ui.js \
+	node_modules/jquery-ui/dist/jquery-ui.js \
+	$(shell find node_modules/jquery-ui/ui/i18n -name '*.js') \
 	node_modules/smartmenus/dist/jquery.smartmenus.js \
 	node_modules/pako/dist/pako_inflate.es5.js \
 	node_modules/fzstd/umd/index.js
@@ -171,9 +168,7 @@ NODE_MODULES_JS =\
 COOL_LIBS_JS =\
 	ResizeObserverPolyfill.js \
 	Autolinker.js \
-	json2.js \
 	select2.js \
-	vex.combined.js \
 	sanitize-url.js
 
 if !ENABLE_MOBILEAPP
@@ -218,6 +213,7 @@ COOL_JS_LST =\
 	src/geo/crs/CRS.Simple.js \
 	src/control/IFrameDialog.js \
 	src/map/Map.js \
+	src/control/Control.IdleHandler.ts \
 	src/map/Clipboard.js \
 	src/layer/tile/SheetSwitch.ts \
 	src/layer/Layer.js \
@@ -297,7 +293,7 @@ COOL_JS_LST =\
 	src/map/handler/Map.Keyboard.js \
 	src/map/handler/Map.Welcome.js \
 	src/map/handler/Map.Feedback.js \
-	src/map/handler/Map.Infobar.js \
+	src/map/handler/Map.VersionBar.js \
 	src/dom/DomEvent.MultiClick.js \
 	src/map/handler/Map.Mouse.js \
 	src/map/handler/Map.Print.js \
@@ -327,10 +323,14 @@ COOL_JS_LST =\
 	src/control/Control.Selection.js \
 	src/control/Control.LokDialog.js \
 	src/control/Control.AlertDialog.js \
-	src/control/Control.Infobar.js \
 	src/control/ColorPicker.js \
+	src/control/jsdialog/Widget.DrawingArea.js \
+	src/control/jsdialog/Widget.FormulabarEdit.js \
 	src/control/jsdialog/Widget.LanguageSelector.js \
+	src/control/jsdialog/Widget.MenuButton.js \
+	src/control/jsdialog/Widget.MobileTabControl.js \
 	src/control/jsdialog/Widget.MultilineEdit.js \
+	src/control/jsdialog/Widget.ScrolledWindow.js \
 	src/control/jsdialog/Widget.TreeView.js \
 	src/control/Control.JSDialog.js \
 	src/control/Control.JSDialogBuilder.js \

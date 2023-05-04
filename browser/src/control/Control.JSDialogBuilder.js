@@ -17,6 +17,8 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		mobileWizard: null,
 		// css class name added to the html nodes
 		cssClass: 'mobile-wizard',
+		// custom tabs placement handled by the parent container
+		useSetTabs: false,
 
 		// create only icon without label
 		noLabelsForUnoButtons: false,
@@ -63,7 +65,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 
 		// list of types which can have multiple children but are not considered as containers
 		this._nonContainerType = ['buttonbox', 'treelistbox', 'iconview', 'combobox', 'listbox',
-			'scrollwindow', 'grid', 'tabcontrol'];
+			'scrollwindow', 'grid', 'tabcontrol', 'multilineedit', 'formulabaredit', 'frame'];
 
 		this._controlHandlers = {};
 		this._controlHandlers['radiobutton'] = this._radiobuttonControl;
@@ -73,9 +75,12 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		this._controlHandlers['metricfield'] = this._metricfieldControl;
 		this._controlHandlers['formattedfield'] = this._formattedfieldControl;
 		this._controlHandlers['edit'] = this._editControl;
+		this._controlHandlers['formulabaredit'] = JSDialog.formulabarEdit;
 		this._controlHandlers['multilineedit'] = JSDialog.multilineEdit;
 		this._controlHandlers['pushbutton'] = this._pushbuttonControl;
 		this._controlHandlers['okbutton'] = this._pushbuttonControl;
+		this._controlHandlers['helpbutton'] = this._pushbuttonControl;
+		this._controlHandlers['cancelbutton'] = this._pushbuttonControl;
 		this._controlHandlers['combobox'] = this._comboboxControl;
 		this._controlHandlers['comboboxentry'] = this._comboboxEntry;
 		this._controlHandlers['listbox'] = this._listboxControl;
@@ -91,8 +96,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		this._controlHandlers['panel'] = this._panelHandler;
 		this._controlHandlers['calcfuncpanel'] = this._calcFuncListPanelHandler;
 		this._controlHandlers['tabcontrol'] = this._tabsControlHandler;
-		this._controlHandlers['tabpage'] = this._containerHandler;
-		this._controlHandlers['paneltabs'] = this._panelTabsHandler;
+		this._controlHandlers['tabpage'] = this._tabPageHandler;
 		this._controlHandlers['singlepanel'] = this._singlePanelHandler;
 		this._controlHandlers['container'] = this._containerHandler;
 		this._controlHandlers['dialog'] = this._containerHandler;
@@ -109,16 +113,16 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		this._controlHandlers['borderstyle'] = this._borderControl;
 		this._controlHandlers['treelistbox'] = JSDialog.treeView;
 		this._controlHandlers['iconview'] = this._iconViewControl;
-		this._controlHandlers['drawingarea'] = this._drawingAreaControl;
+		this._controlHandlers['drawingarea'] = JSDialog.drawingArea;
 		this._controlHandlers['rootcomment'] = this._rootCommentControl;
 		this._controlHandlers['comment'] = this._commentControl;
 		this._controlHandlers['emptyCommentWizard'] = this._rootCommentControl;
 		this._controlHandlers['separator'] = this._separatorControl;
-		this._controlHandlers['menubutton'] = this._menubuttonControl;
+		this._controlHandlers['menubutton'] = JSDialog.menubuttonControl;
 		this._controlHandlers['spinner'] = this._spinnerControl;
 		this._controlHandlers['spinnerimg'] = this._spinnerImgControl;
 		this._controlHandlers['image'] = this._imageHandler;
-		this._controlHandlers['scrollwindow'] = this._scrollWindowControl;
+		this._controlHandlers['scrollwindow'] = JSDialog.scrolledWindow;
 		this._controlHandlers['customtoolitem'] = this._mapDispatchToolItem;
 		this._controlHandlers['bigcustomtoolitem'] = this._mapBigDispatchToolItem;
 
@@ -338,6 +342,9 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		spinfield.tabIndex = '0';
 		controls['spinfield'] = spinfield;
 
+		if (data.labelledBy)
+			spinfield.setAttribute('aria-labelledby', data.labelledBy);
+
 		if (data.unit) {
 			var unit = L.DomUtil.create('span', builder.options.cssClass + ' spinfieldunit', div);
 			unit.textContent = builder._unitToVisibleString(data.unit);
@@ -404,6 +411,34 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				}
 			}
 		}
+	},
+
+	_stressAccessKey: function(element, accessKey) {
+		if (!accessKey)
+			return;
+
+		var text = element.textContent;
+		var index = text.indexOf(accessKey);
+			if (index >= 0) {
+					var title = text.replace(accessKey, '<u class="access-key">' + accessKey.replace('~', '') + '</u>');
+					element.innerHTML = title;
+		}
+	},
+
+	_setAccessKey: function(element, key) {
+		if (key)
+				element.accessKey = key;
+	},
+
+	_getAccessKeyFromText: function(text) {
+		var nextChar = null;
+		if (text && text.includes('~')) {
+			var index = text.indexOf('~');
+			if (index < text.length - 1) {
+				nextChar = text.charAt(index + 1);
+			}
+		}
+		return nextChar;
 	},
 
 	_cleanText: function(text) {
@@ -482,16 +517,6 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		return false;
 	},
 
-	_scrollWindowControl: function(parentContainer, data, builder) {
-		var scrollwindow = L.DomUtil.create('div', builder.options.cssClass + ' ui-scrollwindow', parentContainer);
-		if (data.id)
-			scrollwindow.id = data.id;
-
-		builder.build(scrollwindow, data.children, false, true);
-
-		return false;
-	},
-
 	_borderwindowHandler: function(parentContainer, data, builder) {
 		if (data.visible === false) {
 			for (var i in data.children)
@@ -499,6 +524,16 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		}
 
 		return builder._containerHandler(parentContainer, data, builder);
+	},
+
+	_handleResponses: function(data, builder) {
+		// Dialogue is a parent container of a buttonbox, so we will save the responses first, then we will check them while creating the buttons.
+		if (data.responses) {
+			for (var i in data.responses) {
+				// Button id = response
+				builder._responses[data.responses[i].id] = data.responses[i].response;
+			}
+		}
 	},
 
 	_containerHandler: function(parentContainer, data, builder) {
@@ -509,16 +544,17 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		if (parentContainer && !parentContainer.id)
 			parentContainer.id = data.id;
 
-		// Dialogue is a parent container of a buttonbox, so we will save the responses first, then we will check them while creating the buttons.
-		if ((data.type === 'dialog' || data.type === 'messagebox' || data.type === 'modelessdialog')
-			&& data.responses) {
-			for (var i in data.responses) {
-				// Button id = response
-				builder._responses[data.responses[i].id] = data.responses[i].response;
-			}
-		}
-
 		return true;
+	},
+
+	// used inside tab control and assistant (chart wizard, where it should create own container)
+	_tabPageHandler: function(parentContainer, data, builder) {
+		var page = L.DomUtil.create('div', builder.options.cssClass + ' ui-tabpage', parentContainer);
+		page.id = data.id;
+
+		builder.build(page, data.children, false);
+
+		return false;
 	},
 
 	_alignmentHandler: function(parentContainer, data, builder) {
@@ -640,7 +676,10 @@ L.Control.JSDialogBuilder = L.Control.extend({
 
 		for (i in leftAlignButtons) {
 			child = leftAlignButtons[i];
-			builder._controlHandlers[child.type](left, child, builder);
+			if (builder._controlHandlers[child.type]) {
+				builder._controlHandlers[child.type](left, child, builder);
+				builder.postProcess(left, child);
+			}
 		}
 
 		var right = L.DomUtil.create('div', builder.options.cssClass + ' ui-button-box-right', container);
@@ -649,7 +688,17 @@ L.Control.JSDialogBuilder = L.Control.extend({
 
 		for (i in rightAlignButton) {
 			child = rightAlignButton[i];
-			builder._controlHandlers[child.type](right, child, builder);
+			if (builder._controlHandlers[child.type]) {
+				builder._controlHandlers[child.type](right, child, builder);
+				builder.postProcess(right, child);
+			}
+		}
+
+		if (data.vertical === 'true' || data.vertical === true) {
+			left.style.display = 'grid';
+			left.style.margin = 'auto';
+			right.style.display = 'grid';
+			right.style.margin = 'auto';
 		}
 
 		return false;
@@ -934,7 +983,8 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			container.id = data.id;
 
 			var frame = L.DomUtil.create('div', 'ui-frame ' + builder.options.cssClass, container);
-			var label = L.DomUtil.create('span', 'ui-frame-label ' + builder.options.cssClass, frame);
+			frame.id = data.id + '-frame';
+			var label = L.DomUtil.create('label', 'ui-frame-label ' + builder.options.cssClass, frame);
 			label.innerText = builder._cleanText(data.children[0].text);
 			label.id = data.children[0].id;
 			if (data.children[0].visible === false)
@@ -942,6 +992,8 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			builder.postProcess(frame, data.children[0]);
 
 			var frameChildren = L.DomUtil.create('div', 'ui-expander-content ' + builder.options.cssClass, container);
+			frameChildren.id = data.id + '-content';
+			label.htmlFor = frameChildren.id;
 			$(frameChildren).addClass('expanded');
 
 			var children = [];
@@ -1003,11 +1055,16 @@ L.Control.JSDialogBuilder = L.Control.extend({
 	{
 		return function() {
 			$(tabs[t]).addClass('selected');
+			tabs[t].tabIndex = '0';
+			tabs[t].setAttribute('aria-selected', 'true');
+
 			for (var i = 0; i < tabs.length; i++) {
 				if (i !== t)
 				{
 					$(tabs[i]).removeClass('selected');
 					$(contentDivs[i]).hide();
+					tabs[i].setAttribute('aria-selected', 'false');
+					tabs[i].tabIndex = -1;
 				}
 			}
 			$(contentDivs[t]).show();
@@ -1027,9 +1084,13 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			}
 			var isMultiTabJSON = tabs > 1;
 
-			var tabsContainer = L.DomUtil.create('div', 'ui-tabs ' + builder.options.cssClass + ' ui-widget');
-			tabsContainer.id = data.id;
-			var contentsContainer = L.DomUtil.create('div', 'ui-tabs-content ' + builder.options.cssClass + ' ui-widget', parentContainer);
+			var tabWidgetRootContainer = L.DomUtil.create('div', 'ui-tabs-root ' + builder.options.cssClass + ' ui-widget', parentContainer);
+			tabWidgetRootContainer.id = data.id;
+
+			var tabsContainer = L.DomUtil.create('div', 'ui-tabs ' + builder.options.cssClass + ' ui-widget', builder.options.useSetTabs ? undefined : tabWidgetRootContainer);
+			tabsContainer.setAttribute('role', 'tablist');
+
+			var contentsContainer = L.DomUtil.create('div', 'ui-tabs-content ' + builder.options.cssClass + ' ui-widget', tabWidgetRootContainer);
 
 			var tabs = [];
 			var contentDivs = [];
@@ -1040,15 +1101,24 @@ L.Control.JSDialogBuilder = L.Control.extend({
 
 				var title = builder._cleanText(item.text);
 
-				var tab = L.DomUtil.create('div', 'ui-tab ' + builder.options.cssClass, tabsContainer);
+				var tab = L.DomUtil.create('button', 'ui-tab ' + builder.options.cssClass, tabsContainer);
 				tab.id = item.name + '-tab-label';
 				tab.number = item.id - 1;
+				tab.textContent = title;
+				tab.setAttribute('role', 'tab');
+				builder._setAccessKey(tab, builder._getAccessKeyFromText(item.text));
+				builder._stressAccessKey(tab, tab.accessKey);
 
 				var isSelectedTab = data.selected == item.id;
 				if (isSelectedTab) {
 					$(tab).addClass('selected');
+					tab.setAttribute('aria-selected', 'true');
+					tab.tabIndex = '0';
 					tab.title = tabTooltip;
 					singleTabId = tabIdx;
+				} else {
+					tab.setAttribute('aria-selected', 'false');
+					tab.tabIndex = -1;
 				}
 
 				var tabContext = item.context;
@@ -1065,11 +1135,9 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				tabs[tabIdx] = tab;
 				tabIds[tabIdx] = item.name;
 
-				var label = L.DomUtil.create('span', 'ui-tab-content ' + builder.options.cssClass + ' unolabel', tab);
-				label.textContent = title;
-
 				var contentDiv = L.DomUtil.create('div', 'ui-content level-' + builder._currentDepth + ' ' + builder.options.cssClass, contentsContainer);
 				contentDiv.id = item.name;
+				contentDiv.setAttribute('role', 'tabpanel');
 
 				if (!isSelectedTab)
 					$(contentDiv).hide();
@@ -1077,19 +1145,96 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			}
 
 			if (builder.wizard) {
-				builder.wizard.setTabs(tabsContainer, builder);
+				if (builder.options.useSetTabs)
+					builder.wizard.setTabs(tabsContainer, builder);
 
-				for (var t = 0; t < tabs.length; t++) {
-					// to get capture of 't' right has to be a sub fn.
-					var fn = function(id) {
-						return function(event) {
-							builder._createTabClick(builder, id, tabs, contentDivs, tabIds)(event);
-							if (data.tabs[id].id - 1 >= 0)
-								builder.callback('tabcontrol', 'selecttab', tabsContainer, id, builder);
-						};
-					};
-					$(tabs[t]).click(fn(t));
-				}
+				tabs.forEach(function (tab, index) {
+					tab.addEventListener('click', function(event) {
+						builder._createTabClick(builder, index, tabs, contentDivs, tabIds)(event);
+						if (data.tabs[index].id - 1 >= 0)
+							builder.callback('tabcontrol', 'selecttab', tabWidgetRootContainer, index, builder);
+					});
+				});
+
+				var isTabVisible = function (tab) {
+					return !$(tab).hasClass('hidden');
+				};
+
+				var findNextVisibleTab = function (tab, backwards) {
+					var diff = (backwards ? -1 : 1);
+					var nextTab = tabs[tabs.indexOf(tab) + diff];
+
+					while (!isTabVisible(nextTab) && nextTab != tab) {
+						if (backwards && tabs.indexOf(nextTab) == 0)
+							nextTab = tabs[tabs.length - 1];
+						else if (!backwards && tabs.indexOf(nextTab) == tabs.length - 1)
+							nextTab = tabs[0];
+						else
+							nextTab = tabs[tabs.indexOf(nextTab) + diff];
+					}
+
+					return nextTab;
+				};
+
+				var moveFocusToPreviousTab = function(tab) {
+					if (tab === tabs[0])
+						tabs[tabs.length - 1].focus();
+					else
+						findNextVisibleTab(tab, true).focus();
+				};
+
+				var moveFocusToNextTab = function(tab) {
+					if (tab === tabs[tabs.length - 1])
+						tabs[0].focus();
+					else
+						findNextVisibleTab(tab, false).focus();
+				};
+
+				// We are adding this to distinguish "enter" key from real click events.
+				tabs.forEach(function (tab)
+					{
+						tab.addEventListener('keydown', function(e) {
+							var currentTab = e.currentTarget;
+
+							switch (e.key) {
+							case 'ArrowLeft':
+								moveFocusToPreviousTab(currentTab);
+								break;
+
+							case 'ArrowRight':
+								moveFocusToNextTab(currentTab);
+								break;
+
+							case 'Home':
+							{
+								var firstTab = tabs[0];
+								if (!isTabVisible(firstTab))
+									firstTab = findNextVisibleTab(firstTab, false);
+								firstTab.focus();
+								break;
+							}
+
+							case 'End':
+							{
+								var lastTab = tabs[tabs.length - 1];
+								if (!isTabVisible(lastTab))
+									lastTab = findNextVisibleTab(lastTab, true);
+								lastTab.focus();
+								break;
+							}
+
+							case 'Enter':
+							case ' ':
+								tab.enterPressed = true;
+								break;
+
+							case 'Escape':
+								builder.map.focus();
+								break;
+							}
+						});
+					}
+				);
 			} else {
 				window.app.console.debug('Builder used outside of mobile wizard: please implement the click handler');
 			}
@@ -1123,70 +1268,6 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		}
 	},
 
-	_panelTabsHandler: function(parentContainer, data, builder) {
-		var tabsContainer = L.DomUtil.create('div', 'ui-tabs ' + builder.options.cssClass + ' ui-widget');
-		var contentsContainer = L.DomUtil.create('div', 'ui-tabs-content ' + builder.options.cssClass + ' ui-widget', parentContainer);
-
-		for (var tabIdx = data.length - 1; tabIdx >= 0; tabIdx--) {
-			var item = data[tabIdx];
-			if (item.hidden === true)
-				data.splice(tabIdx, 1);
-		}
-
-		var tabs = [];
-		var contentDivs = [];
-		var labels = [];
-		for (tabIdx = 0; tabIdx < data.length; tabIdx++) {
-			item = data[tabIdx];
-
-			var title = builder._cleanText(item.text);
-
-			var tab = L.DomUtil.create('div', 'ui-tab ' + builder.options.cssClass, tabsContainer);
-			tab.id = title;
-			tabs[tabIdx] = tab;
-
-			var label = L.DomUtil.create('span', 'ui-tab-content ' + builder.options.cssClass + ' unolabel', tab);
-			label.textContent = title;
-			labels[tabIdx] = title;
-
-			var contentDiv = L.DomUtil.create('div', 'ui-content level-' + builder._currentDepth + ' ' + builder.options.cssClass, contentsContainer);
-			contentDiv.title = title;
-
-			builder._currentDepth++;
-			if (item.children)
-			{
-				for (var i = 0; i < item.children.length; i++) {
-					builder.build(contentDiv, [item.children[i]]);
-				}
-			}
-			else // build ourself inside there
-			{
-				builder.build(contentDiv, [item]);
-			}
-			builder._currentDepth--;
-
-			$(contentDiv).hide();
-			contentDivs[tabIdx] = contentDiv;
-		}
-
-		if (builder.wizard) {
-			builder.wizard.setTabs(tabsContainer, builder);
-
-			for (var t = 0; t < tabs.length; t++) {
-				// to get capture of 't' right has to be a sub fn.
-				var fn = builder._createTabClick(
-					builder, t, tabs, contentDivs, labels);
-				$(tabs[t]).click(fn);
-			}
-		} else {
-			window.app.console.debug('Builder used outside of mobile wizard: please implement the click handler');
-		}
-		$(tabs[0]).click();
-		builder.wizard.goLevelDown(contentsContainer);
-
-		return false;
-	},
-
 	_singlePanelHandler: function(parentContainer, data, builder) {
 		var item = data[0];
 		if (item.children) {
@@ -1215,9 +1296,11 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		if (data.group)
 			radiobutton.name = data.group;
 
-		var radiobuttonLabel = L.DomUtil.create('label', '', container);
+		var radiobuttonLabel = L.DomUtil.createWithId('label', data.id + '-label', container);
 		radiobuttonLabel.textContent = builder._cleanText(data.text);
-		radiobuttonLabel.for = data.id;
+		radiobuttonLabel.htmlFor = data.id;
+
+		radiobutton.setAttribute('aria-labelledby', radiobuttonLabel.id);
 
 		var toggleFunction = function() {
 			builder.callback('radiobutton', 'change', container, this.checked, builder);
@@ -1251,9 +1334,13 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		checkbox.type = 'checkbox';
 		checkbox.id = data.id + '-input';
 		checkbox.tabIndex = '0';
+
 		var checkboxLabel = L.DomUtil.create('label', builder.options.cssClass, div);
+		checkboxLabel.id = data.id + '-label';
 		checkboxLabel.textContent = builder._cleanText(data.text);
-		checkboxLabel.for = data.id;
+		checkboxLabel.htmlFor = data.id;
+
+		checkbox.setAttribute('aria-labelledby', checkboxLabel.id);
 
 		var toggleFunction = function() {
 			builder.callback('checkbox', 'change', div, this.checked, builder);
@@ -1481,9 +1568,13 @@ L.Control.JSDialogBuilder = L.Control.extend({
 	},
 
 	_pushbuttonControl: function(parentContainer, data, builder, customCallback) {
+		if (data.id && data.id === 'changepass' && builder.map['wopi'].IsOwner === false) {
+			data.enabled = false;
+		}
 		var wrapper = L.DomUtil.create('div', '', parentContainer); // need for locking overlay
 		var pushbutton = L.DomUtil.create('button', 'ui-pushbutton ' + builder.options.cssClass, wrapper);
 		pushbutton.id = data.id;
+		builder._setAccessKey(pushbutton, builder._getAccessKeyFromText(data.text));
 		var pushbuttonText = builder._customPushButtonTextForId(data.id) !== '' ? builder._customPushButtonTextForId(data.id) : builder._cleanText(data.text);
 
 		if (data.image && pushbuttonText !== '') {
@@ -1492,6 +1583,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			image.src = data.image;
 			var text = L.DomUtil.create('span', '', pushbutton);
 			text.innerText = pushbuttonText;
+			builder._stressAccessKey(text, pushbutton.accessKey);
 		} else if (data.image) {
 			L.DomUtil.addClass(pushbutton, 'has-img d-flex align-content-center justify-content-center align-items-center');
 			var image = L.DomUtil.create('img', '', pushbutton);
@@ -1502,6 +1594,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			image.src = L.LOUtil.getImageURL('symbol_' + data.symbol + '.svg');
 		} else {
 			pushbutton.innerText = pushbuttonText;
+			builder._stressAccessKey(pushbutton, pushbutton.accessKey);
 		}
 
 		if (data.enabled === 'false' || data.enabled === false)
@@ -1512,12 +1605,12 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		else if (builder._responses[pushbutton.id] !== undefined)
 			pushbutton.onclick = builder.callback.bind(builder, 'responsebutton', 'click', { id: pushbutton.id }, builder._responses[pushbutton.id], builder);
 		else
-			pushbutton.onclick = builder.callback.bind(builder, 'pushbutton', 'click', pushbutton, data.command, builder);
+			pushbutton.onclick = builder.callback.bind(builder, 'pushbutton', data.isToggle ? 'toggle' : 'click', pushbutton, data.command, builder);
 
 		builder.map.hideRestrictedItems(data, wrapper, pushbutton);
 		builder.map.disableLockedItem(data, wrapper, pushbutton);
 		if (data.hidden)
-			$(pushbutton).hide();
+			$(wrapper).hide(); // Both pushbutton and its wrapper needs to be hidden.
 
 		return false;
 	},
@@ -1637,6 +1730,9 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		listbox.id = data.id + '-input';
 		var listboxArrow = L.DomUtil.create('span', builder.options.cssClass + ' ui-listbox-arrow', container);
 		listboxArrow.id = 'listbox-arrow-' + data.id;
+
+		if (data.labelledBy)
+			listbox.setAttribute('aria-labelledby', data.labelledBy);
 
 		if (data.enabled === false || data.enabled === 'false')
 			$(listbox).attr('disabled', 'disabled');
@@ -1804,7 +1900,10 @@ L.Control.JSDialogBuilder = L.Control.extend({
 	},
 
 	_fixedtextControl: function(parentContainer, data, builder) {
-		var fixedtext = L.DomUtil.create('p', builder.options.cssClass, parentContainer);
+		var fixedtext = L.DomUtil.create('label', builder.options.cssClass, parentContainer);
+
+		if (data.labelFor)
+			fixedtext.htmlFor = data.labelFor;
 
 		if (data.text)
 			fixedtext.textContent = builder._cleanText(data.text);
@@ -1836,101 +1935,6 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			L.DomUtil.addClass(target, 'vertical');
 		} else {
 			L.DomUtil.addClass(target, 'horizontal');
-		}
-
-		return false;
-	},
-
-	_drawingAreaControl: function(parentContainer, data, builder) {
-		var container = L.DomUtil.create('div', builder.options.cssClass + ' ui-drawing-area-container', parentContainer);
-		container.id = data.id;
-
-		if (!data.image)
-			return;
-
-		var image = L.DomUtil.create('img', builder.options.cssClass + ' ui-drawing-area', container);
-		image.src = data.image.replace(/\\/g, '');
-		image.alt = data.text;
-		image.title = data.text;
-		builder.map.uiManager.enableTooltip(image);
-
-		if (data.loading && data.loading === 'true') {
-			var loaderContainer = L.DomUtil.create('div', 'ui-drawing-area-loader-container', container);
-			L.DomUtil.create('div', 'ui-drawing-area-loader', loaderContainer);
-		}
-		if (data.placeholderText && data.placeholderText === 'true') {
-			var spanContainer = L.DomUtil.create('div', 'ui-drawing-area-placeholder-container', container);
-			var span = L.DomUtil.create('span', 'ui-drawing-area-placeholder', spanContainer);
-			span.innerText = data.text;
-		}
-		L.DomEvent.on(image, 'click touchend', function(e) {
-			var x = 0;
-			var y = 0;
-
-			if (e.offsetX) {
-				x = e.offsetX;
-				y = e.offsetY;
-			} else if (e.changedTouches && e.changedTouches.length) {
-				x = e.changedTouches[e.changedTouches.length-1].pageX - $(image).offset().left;
-				y = e.changedTouches[e.changedTouches.length-1].pageY - $(image).offset().top;
-			}
-
-			var coordinates = (x / image.offsetWidth) + ';' + (y / image.offsetHeight);
-			builder.callback('drawingarea', 'click', container, coordinates, builder);
-		}, this);
-
-		return false;
-	},
-
-	_menubuttonControl: function(parentContainer, data, builder) {
-		var ids = data.id.split(':');
-
-		var menuId = null;
-		if (ids.length > 1)
-			menuId = ids[1];
-
-		data.id = ids[0];
-
-		if (menuId && builder._menus[menuId]) {
-			var noLabels = builder.options.noLabelsForUnoButtons;
-			builder.options.noLabelsForUnoButtons = false;
-
-			// command is needed to generate image
-			if (!data.command)
-				data.command = menuId;
-
-			var options = {hasDropdownArrow: true};
-			var control = builder._unoToolButton(parentContainer, data, builder, options);
-
-			$(control.container).tooltip({disabled: true});
-
-			$(control.container).unbind('click');
-			$(control.container).click(function () {
-				$(control.container).w2menu({
-					items: builder._menus[menuId],
-					onSelect: function (event) {
-						builder.map.sendUnoCommand('.uno:' + event.item.uno);
-					}
-				});
-			});
-
-			builder.options.noLabelsForUnoButtons = noLabels;
-		} else if (data.text) {
-			var button = L.DomUtil.create('div', 'menubutton ' + builder.options.cssClass, parentContainer);
-			button.id = data.id;
-			if (data.image) {
-				var image = L.DomUtil.create('img', '', button);
-				image.src = data.image;
-			}
-			var label = L.DomUtil.create('span', '', button);
-			label.innerText = data.text;
-			L.DomUtil.create('i', 'arrow', button);
-
-			$(button).click(function () {
-				builder.callback('menubutton', 'toggle', button, undefined, builder);
-			});
-		} else {
-			window.app.console.warn('Not found menu "' + menuId + '"');
 		}
 
 		return false;
@@ -2141,6 +2145,10 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		}
 
 		var iconURLAliases = {
+			'closetablet': 'view',
+			'defineprintarea': 'menuprintranges',
+			'deleteprintarea': 'delete',
+			'sheetrighttoleft' : 'pararighttoleft',
 			'alignleft': 'leftpara',
 			'alignright': 'rightpara',
 			'alignhorizontalcenter': 'centerpara',
@@ -2191,6 +2199,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			'cellverttop': 'aligntop',
 			'scalignmentpropertypanel': 'aligntop',
 			'hyperlinkdialog': 'inserthyperlink',
+			'remotelink': 'inserthyperlink',
 			'openhyperlinkoncursor': 'inserthyperlink',
 			'pageformatdialog': 'pagedialog',
 			'backgroundcolor': 'fillcolor',
@@ -2348,11 +2357,15 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		}
 
 		controls['container'] = div;
+		div.tabIndex = -1;
 
 		var isRealUnoCommand = true;
 
+		if (data.text)
+			data.text = data.text.replace('...', '');
+
 		if (data.command || data.postmessage === true) {
-			var id = data.id ? data.id : (data.text && data.text !== '') ? data.text : data.command;
+			var id = data.id ? data.id : (data.command && data.command !== '') ? data.command : data.text;
 			var isUnoCommand = data.command && data.command.indexOf('.uno:') >= 0;
 			if (isUnoCommand)
 				id = encodeURIComponent(data.command.substr('.uno:'.length));
@@ -2375,18 +2388,22 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			var icon = data.icon ? data.icon : builder._createIconURL(data.command);
 			var buttonId = id + 'img';
 
-			button = L.DomUtil.create('img', 'ui-content unobutton', div);
-			button.src = (data.image && !isUnoCommand) ? data.image : icon;
+			button = L.DomUtil.create('button', 'ui-content unobutton', div);
 			button.id = buttonId;
 			button.setAttribute('alt', id);
+			builder._setAccessKey(button, builder._getAccessKeyFromText(data.text));
+
+			var imagePath = (data.image && !isUnoCommand) ? data.image : icon;
+			var buttonImage = L.DomUtil.create('img', '', button);
+			buttonImage.src = imagePath;
 
 			controls['button'] = button;
 
 			if (builder.options.noLabelsForUnoButtons !== true) {
-				var label = L.DomUtil.create('span', 'ui-content unolabel', div);
-				label.for = buttonId;
+				var label = L.DomUtil.create('label', 'ui-content unolabel', button);
+				label.htmlFor = buttonId;
 				label.textContent = builder._cleanText(data.text);
-
+				builder._stressAccessKey(label, button.accessKey);
 				controls['label'] = label;
 				$(div).addClass('has-label');
 			} else if (builder.options.useInLineLabelsForUnoButtons === true) {
@@ -2400,7 +2417,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			if (builder.options.useInLineLabelsForUnoButtons === true) {
 				$(div).addClass('inline');
 				label = L.DomUtil.create('span', 'ui-content unolabel', div);
-				label.for = buttonId;
+				label.htmlFor = buttonId;
 				label.textContent = builder._cleanText(data.text);
 
 				controls['label'] = label;
@@ -2420,10 +2437,26 @@ L.Control.JSDialogBuilder = L.Control.extend({
 						$(div).removeClass('selected');
 					}
 
-					if (state && state === 'disabled')
-						$(div).addClass('disabled');
-					else
+					if (state && state === 'disabled') {
+						if (data.command === '.uno:Paste') {
+							// Fix GitHub issue #5839 and never disable Paste toolbar button
+							// Behave the same as Contol.Menubar and never
+							// disable Paste toolbar button. Native clients
+							// that run LibreOffice locally may send a
+							// "statechanged: .uno:Paste=disabled" message when
+							// opening a document if the system clipboard is
+							// empty, So, we ignore such messages or else the
+							// current document's Paste toolbar button will
+							// never be enabled.
+							$(div).removeClass('disabled');
+							window.app.console.log('do not disable paste based on server side data');
+						} else {
+							$(div).addClass('disabled');
+						}
+					}
+					else {
 						$(div).removeClass('disabled');
+					}
 				};
 
 				updateFunction();
@@ -2527,6 +2560,8 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				builder.map.dispatch(data.command);
 			});
 		}
+
+		builder._preventDocumentLosingFocusOnClick(control.container);
 	},
 
 	_mapBigDispatchToolItem: function (parentContainer, data, builder) {
@@ -2546,6 +2581,8 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				builder.map.dispatch(data.command);
 			});
 		}
+
+		builder._preventDocumentLosingFocusOnClick(control.container);
 	},
 
 	_divContainerHandler: function (parentContainer, data, builder) {
@@ -2754,7 +2791,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 	},
 
 	_borderControl: function(parentContainer, data, builder) {
-		var bordercontrollabel = L.DomUtil.create('p', builder.options.cssClass + ' ui-text', parentContainer);
+		var bordercontrollabel = L.DomUtil.create('label', builder.options.cssClass + ' ui-text', parentContainer);
 		bordercontrollabel.textContent = _('Cell borders');
 		bordercontrollabel.id = data.id + 'label';
 		var current = builder._getCurrentBorderNumber(builder);
@@ -3034,7 +3071,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				L.DomUtil.addClass(entry, 'selected');
 				var blockOption = this._scrollIntoViewBlockOption('nearest');
 				entry.scrollIntoView({behavior: 'smooth', block: blockOption, inline: 'nearest'});
-			} else
+			} else if (pos != -1)
 				console.warn('not found entry: "' + pos + '" in: "' + data.control_id + '"');
 
 			break;
@@ -3132,10 +3169,17 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			control.style.gridColumn = 'span ' + parseInt(data.width);
 		}
 
+		if (control && data.labelledBy)
+			control.setAttribute('aria-labelledby', data.labelledBy);
+
 		// natural tab-order when using keyboard navigation
 		if (control && !control.hasAttribute('tabIndex')
 			&& data.type !== 'container'
+			&& data.type !== 'tabpage'
+			&& data.type !== 'tabcontrol'
+			&& data.type !== 'drawingarea'
 			&& data.type !== 'grid'
+			&& data.type !== 'image'
 			&& data.type !== 'toolbox'
 			&& data.type !== 'listbox'
 			&& data.type !== 'combobox'
@@ -3148,7 +3192,8 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			&& data.type !== 'frame'
 			&& data.type !== 'expander'
 			&& data.type !== 'panel'
-			&& data.type !== 'buttonbox')
+			&& data.type !== 'buttonbox'
+			&& data.type !== 'treelistbox')
 			control.setAttribute('tabIndex', '0');
 	},
 
@@ -3166,6 +3211,8 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				continue;
 
 			var childType = childData.type;
+
+			this._handleResponses(childData, this);
 
 			var containerToInsert = parent;
 

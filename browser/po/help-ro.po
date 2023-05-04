@@ -2,9 +2,9 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2023-02-03 12:49+0200\n"
-"PO-Revision-Date: 2020-10-08 12:25+0000\n"
-"Last-Translator: Allan Nordhøy <epost@anotheragency.no>\n"
+"POT-Creation-Date: 2023-05-03 16:53+0200\n"
+"PO-Revision-Date: 2023-03-30 08:41+0000\n"
+"Last-Translator: Cosmin <cosmin@fsfe.org>\n"
 "Language-Team: Romanian <https://hosted.weblate.org/projects/"
 "collabora-online/help/ro/>\n"
 "Language: ro\n"
@@ -33,7 +33,7 @@ msgstr "Ctrl</kbd><span class=\"kbd--plus\">+</span><kbd>Z"
 
 #: html/cool-help.html%2Bdiv.div.table.tr.td:24-18
 msgid "Redo"
-msgstr "Revenire"
+msgstr "Refă"
 
 #: html/cool-help.html%2Bdiv.div.table.tr.td:24-49
 msgid "Ctrl</kbd><span class=\"kbd--plus\">+</span><kbd>Y"

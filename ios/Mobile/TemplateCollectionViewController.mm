@@ -32,7 +32,10 @@ static NSString *mapTemplateExtensionToActual(NSString *templateName) {
 
 - (void)viewDidLoad {
 
-    self.modalInPresentation = YES;
+    // Partial fix for issue #1962 Dismiss view by tapping outside of the view
+    // Setting modalInPresentation to YES will ignore all events outside of
+    // the view so set self.modalInPresentation to NO.
+    self.modalInPresentation = NO;
 
     static NSString *downloadedTemplates = [[NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES) objectAtIndex:0] stringByAppendingString:@"/downloadedTemplates/"];
 
@@ -61,6 +64,18 @@ static NSString *mapTemplateExtensionToActual(NSString *templateName) {
         templates[1] = [[[NSBundle mainBundle] URLsForResourcesWithExtension:@".ots" subdirectory:@"Templates"] mutableCopy];
     if ([templates[2] count] == 0)
         templates[2] = [[[NSBundle mainBundle] URLsForResourcesWithExtension:@".otp" subdirectory:@"Templates"] mutableCopy];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    // Partial fix for issue #1962 Invoke import handler when view is dismissed
+    // If the import handler has not already been invoked, invoke it or else
+    // -[DocumentBrowserViewController
+    // documentBrowser:didRequestDocumentCreationWithHandler:] will never be
+    // hcalled again.
+    if (self.importHandler) {
+        self.importHandler(nil, UIDocumentBrowserImportModeNone);
+        self.importHandler = nil;
+    }
 }
 
 - (NSInteger)numberOfSectionsInCollectionView:(UICollectionView *)collectionView {
@@ -145,11 +160,25 @@ static NSString *mapTemplateExtensionToActual(NSString *templateName) {
     doc->pClass->saveAs(doc, [[newURL absoluteString] UTF8String], nullptr, nullptr);
     doc->pClass->destroy(doc);
 
-    self.importHandler(newURL, UIDocumentBrowserImportModeMove);
+    // Partial fix for issue #1962 Set import handler to nil after use
+    if (self.importHandler) {
+        self.importHandler(newURL, UIDocumentBrowserImportModeMove);
+        self.importHandler = nil;
+    }
 
     [self dismissViewControllerAnimated:YES completion:nil];
 
     return YES;
+}
+
+- (void)cancel {
+    // Partial fix for issue #1962 Set import handler to nil after use
+    if (self.importHandler) {
+        self.importHandler(nil, UIDocumentBrowserImportModeNone);
+        self.importHandler = nil;
+    }
+
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 @end

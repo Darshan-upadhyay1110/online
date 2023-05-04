@@ -1,5 +1,6 @@
 :root {
 	/*LibreOffice Colors: https://wiki.documentfoundation.org/Marketing/Branding#Colors
+	 * this is the color prefab for light mode
 	----------------------------------[to do]*/
 	--blue1-txt-primary-color: 3, 105, 163;
 	--green0-txt-primary-color: 16, 104, 2; /*green1 lacks contrast against white*/
@@ -36,15 +37,4 @@
 	--color-success: #46ba61;
 
 	--color-box-shadow: rgba(77, 77, 77, 0.5);
-	--border-radius: 4px; /* buttons, widgets */
-	--border-radius-large: 10px; /* dialog */
-
-	--default-font-size: 12px;
-	--header-font-size: 16px;
-
-	--default-height: 24px;
-	--header-height: 38px;
-
-	/* Annotations */
-	--annotation-input-size: 240px;
 }

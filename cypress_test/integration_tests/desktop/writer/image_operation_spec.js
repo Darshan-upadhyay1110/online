@@ -29,6 +29,8 @@ describe('Image Operation Tests', function() {
 		insertImage();
 		//when Keep ratio is unchecked
 		assertImageSize(248, 63);
+		// if window is too small sidebar won't popup
+		cy.viewport(1000, 660);
 
 		helper.waitUntilIdle('#selectwidth input');
 

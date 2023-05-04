@@ -70,6 +70,9 @@ ACLOCAL_AMFLAGS = -I m4
 
 # quick and easy for now.
 include_paths = -I${top_srcdir}/common -I${top_srcdir}/net -I${top_srcdir}/wsd -I${top_srcdir}/kit ${ZLIB_CFLAGS} ${ZSTD_CFLAGS} ${PNG_CFLAGS}
+if ENABLE_SSL
+include_paths += ${OPENSSL_CFLAGS}
+endif
 
 AM_CPPFLAGS = -pthread -DCOOLWSD_DATADIR='"@COOLWSD_DATADIR@"' \
 	      -DCOOLWSD_CONFIGDIR='"@COOLWSD_CONFIGDIR@"' \
@@ -119,8 +122,6 @@ if ENABLE_SSL
 shared_sources += net/Ssl.cpp
 endif
 
-shared_json = $(patsubst %.cpp,%.cmd,$(shared_sources))
-
 coolwsd_sources = common/Crypto.cpp \
                   wsd/Admin.cpp \
                   wsd/AdminModel.cpp \
@@ -138,8 +139,6 @@ coolwsd_sources = common/Crypto.cpp \
                   wsd/TileCache.cpp \
                   wsd/ProofKey.cpp \
                   wsd/QuarantineUtil.cpp
-
-coolwsd_json = $(patsubst %.cpp,%.cmd,$(coolwsd_sources))
 
 coolwsd_SOURCES = $(coolwsd_sources) \
                   $(shared_sources)
@@ -178,8 +177,6 @@ lokitclient_SOURCES = common/Log.cpp \
 coolforkit_sources = kit/ChildSession.cpp \
                      kit/ForKit.cpp \
                      kit/Kit.cpp
-
-coolforkit_json = $(patsubst %.cpp,%.cmd,$(coolforkit_sources))
 
 coolforkit_SOURCES = $(coolforkit_sources) \
                      $(shared_sources)
@@ -286,6 +283,7 @@ shared_headers = common/Common.hpp \
                  common/JsonUtil.hpp \
                  common/FileUtil.hpp \
                  common/JailUtil.hpp \
+                 common/LangUtil.hpp \
                  common/Log.hpp \
                  common/Protocol.hpp \
                  common/StateEnum.hpp \
@@ -591,7 +589,7 @@ CLANGXX_COMPILE_FLAGS=clang++ $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 
 JSON_COMPILE_FLAGS=$(subst ",\",$(subst \,\\,$(CLANGXX_COMPILE_FLAGS)))
 
-JSON_COMPILE_SRC = $(coolwsd_json) $(coolforkit_json) $(shared_json)
+JSON_COMPILE_SRC = $(patsubst %.cpp,%.cmd,$(wildcard **/*.cpp))
 
 $(eval $(call file_targets,$(JSON_COMPILE_SRC)))
 

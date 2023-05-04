@@ -16,27 +16,10 @@ function enableEditingMobile() {
 
 	cy.log('Enabling editing mode - start.');
 
-	cy.get('#mobile-edit-button')
-		.then(function(button) {
-			if (button.css('display') !== 'none') {
+	cy.get('#mobile-edit-button').click();
 
-				cy.get('#toolbar-mobile-back')
-					.should('not.have.class', 'editmode-on');
-
-				cy.get('#toolbar-mobile-back')
-					.should('have.class', 'editmode-off');
-
-				cy.get('#mobile-edit-button')
-					.click();
-			}
-		});
-
-
-	cy.get('#toolbar-mobile-back')
-		.should('have.class', 'editmode-on');
-
-	cy.get('#toolbar-mobile-back')
-		.should('not.have.class', 'editmode-off');
+	cy.get('#toolbar-mobile-back').should('have.class', 'editmode-on');
+	cy.get('#toolbar-mobile-back').should('not.have.class', 'editmode-off');
 
 	// Wait until all UI update is finished.
 	cy.get('#toolbar-down')
@@ -357,9 +340,9 @@ function insertComment() {
 
 	cy.get('.cool-annotation-table').should('exist');
 
-	cy.get('#new-mobile-comment-input-area').type('some text');
+	cy.get('#input-modal-input').type('some text');
 
-	cy.get('.vex-dialog-buttons .button-primary').click();
+	cy.get('#response-ok').click();
 
 	cy.get('#comment-container-1').should('exist')
 		.wait(300);

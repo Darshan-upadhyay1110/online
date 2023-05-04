@@ -3,7 +3,7 @@
  * L.Socket contains methods for the communication with the server
  */
 
-/* global app _ vex $ errorMessages Uint8Array brandProductName */
+/* global app _ $ errorMessages Uint8Array brandProductName */
 
 app.definitions.Socket = L.Class.extend({
 	ProtocolVersionNumber: '0.1',
@@ -125,7 +125,7 @@ app.definitions.Socket = L.Class.extend({
 			return;
 		}
 
-		if (!this._map._active) {
+		if (!app.idleHandler._active) {
 			// Avoid communicating when we're inactive.
 			if (typeof msg !== 'string')
 				return;
@@ -167,8 +167,8 @@ app.definitions.Socket = L.Class.extend({
 
 	_onSocketOpen: function () {
 		window.app.console.debug('_onSocketOpen:');
-		this._map._serverRecycling = false;
-		this._map._documentIdle = false;
+		app.idleHandler._serverRecycling = false;
+		app.idleHandler._documentIdle = false;
 
 		// Always send the protocol version number.
 		// TODO: Move the version number somewhere sensible.
@@ -225,7 +225,7 @@ app.definitions.Socket = L.Class.extend({
 		}
 		this._msgQueue = [];
 
-		this._map._activate();
+		app.idleHandler._activate();
 	},
 
 	_utf8ToString: function (data) {
@@ -439,16 +439,31 @@ app.definitions.Socket = L.Class.extend({
 	_extractTextImg: function (e) {
 
 		if ((window.ThisIsTheiOSApp || window.ThisIsTheEmscriptenApp) && typeof (e.data) === 'string') {
-			var index;
-			index = e.data.indexOf('\n');
-			if (index < 0)
-				index = e.data.length;
-			e.imgBytes = new Uint8Array(e.data.length);
-			for (var i = 0; i < e.data.length; i++) {
-				e.imgBytes[i] = e.data.charCodeAt(i);
+			// Another fix for issue #5843 limit splitting on the first newline
+			// to only certain message types on iOS. Also, fix mangled UTF-8
+			// text on iOS in jsdialogs when using languages like Greek and
+			// Japanese by only setting the image bytes for only the same set
+			// of message types.
+			if (window.ThisIsTheEmscriptenApp ||
+					e.data.startsWith('tile:') ||
+					e.data.startsWith('tilecombine:') ||
+					e.data.startsWith('delta:') ||
+					e.data.startsWith('renderfont:') ||
+					e.data.startsWith('rendersearchlist:') ||
+					e.data.startsWith('windowpaint:')) {
+				var index;
+				index = e.data.indexOf('\n');
+				if (index < 0)
+					index = e.data.length;
+				e.imgBytes = new Uint8Array(e.data.length);
+				for (var i = 0; i < e.data.length; i++) {
+					e.imgBytes[i] = e.data.charCodeAt(i);
+				}
+				e.imgIndex = index + 1;
+				e.textMsg = e.data.substring(0, index);
+			} else {
+				e.textMsg = e.data;
 			}
-			e.imgIndex = index + 1;
-			e.textMsg = e.data.substring(0, index);
 		} else if (typeof (e.data) === 'string') {
 			e.textMsg = e.data;
 		} else if (typeof (e.data) === 'object') {
@@ -664,11 +679,6 @@ app.definitions.Socket = L.Class.extend({
 		else if (textMsg.startsWith('commandresult: ')) {
 			var commandresult = JSON.parse(textMsg.substring(textMsg.indexOf('{')));
 			if (commandresult['command'] === 'savetostorage' || commandresult['command'] === 'save') {
-				if (commandresult['success']) {
-					// Close any open confirmation dialogs
-					vex.closeAll();
-				}
-
 				var postMessageObj = {
 					success: commandresult['success'],
 					result: commandresult['result'],
@@ -701,7 +711,7 @@ app.definitions.Socket = L.Class.extend({
 				} else {
 					msg = _('Idle document - please tap to reload and resume editing');
 				}
-				this._map._documentIdle = true;
+				app.idleHandler._documentIdle = true;
 				this._map._docLayer._documentInfo = undefined;
 				postMsgData['Reason'] = 'DocumentIdle';
 				if (textMsg === 'oom')
@@ -717,8 +727,8 @@ app.definitions.Socket = L.Class.extend({
 			}
 			else if (textMsg === 'recycling') {
 				msg = _('Server is down, restarting automatically. Please wait.');
-				this._map._active = false;
-				this._map._serverRecycling = true;
+				app.idleHandler._active = false;
+				app.idleHandler._serverRecycling = true;
 
 				// Prevent reconnecting the world at the same time.
 				var min = 5000;
@@ -726,13 +736,12 @@ app.definitions.Socket = L.Class.extend({
 				var timeoutMs = Math.floor(Math.random() * (max - min) + min);
 
 				var socket = this;
-				map = this._map;
-				clearTimeout(vex.timer);
-				vex.timer = setInterval(function() {
+				var map = this._map;
+				clearTimeout(this.timer);
+				this.timer = setInterval(function() {
 					if (socket.connected()) {
 						// We're connected: cancel timer and dialog.
-						clearTimeout(vex.timer);
-						vex.closeAll();
+						clearTimeout(this.timer);
 						return;
 					}
 
@@ -769,13 +778,13 @@ app.definitions.Socket = L.Class.extend({
 				this.close();
 
 				// Reload the document
-				this._map._active = false;
+				app.idleHandler._active = false;
 				map = this._map;
-				clearTimeout(vex.timer);
-				vex.timer = setInterval(function() {
+				clearTimeout(this.timer);
+				this.timer = setInterval(function() {
 					try {
 						// Activate and cancel timer and dialogs.
-						map._activate();
+						app.idleHandler._activate();
 					} catch (error) {
 						window.app.console.warn('Cannot activate map');
 					}
@@ -783,40 +792,15 @@ app.definitions.Socket = L.Class.extend({
 			}
 
 			// Close any open dialogs first.
-			vex.closeAll();
+			this._map.uiManager.closeAll();
 
 			var message = '';
 			if (!this._map['wopi'].DisableInactiveMessages) {
 				message = msg;
 			}
 
-			var dialogOptions = {
-				message: message,
-				contentClassName: 'cool-user-idle'
-			};
-
-			var restartConnectionFn;
 			if (textMsg === 'idle' || textMsg === 'oom') {
-				var map = this._map;
-				restartConnectionFn = function() {
-					if (map._documentIdle)
-					{
-						window.app.console.debug('idleness: reactivating');
-						map._documentIdle = false;
-						map._docLayer._setCursorVisible();
-						return map._activate();
-					}
-					return false;
-				};
-				dialogOptions.afterClose = restartConnectionFn;
-
-				var dialogOpened = vex.dialog.open(dialogOptions);
-				this._map._textInput.hideCursor();
-				dialogOpened.contentEl.onclick = restartConnectionFn;
-				$('.vex-overlay').addClass('cool-user-idle-overlay');
-
-				if (message === '')
-					$('.cool-user-idle').css('display', 'none');
+				app.idleHandler._dim(message);
 			}
 
 			if (postMsgData['Reason']) {
@@ -872,88 +856,10 @@ app.definitions.Socket = L.Class.extend({
 			}
 			else if (command.errorKind === 'documentconflict')
 			{
-				var that = this;
-				storageError = errorMessages.storage.documentconflict;
-
-				vex.closeAll();
-
-				var dialogButtons = [
-					$.extend({}, vex.dialog.buttons.YES, {
-						text: _('Discard'),
-						className: 'button-secondary',
-						click: function() {
-							this.value = 'discard';
-							this.close();
-						}}),
-					$.extend({}, vex.dialog.buttons.YES, {
-						text: _('Overwrite'),
-						className: 'button-secondary',
-						click: function() {
-							this.value = 'overwrite';
-							this.close();
-						}}),
-					$.extend({}, vex.dialog.buttons.YES, {
-						text: '',
-						className: 'vex-dialog-button-spacer'
-					})
-				];
-
-				if (!that._map['wopi'].UserCanNotWriteRelative) {
-					dialogButtons.push(
-						$.extend({}, vex.dialog.buttons.YES, {
-							text: _('Save to new file'),
-							className: 'button-primary',
-							click: function() {
-								this.value = 'saveas';
-								this.close();
-							}}),
-						$.extend({}, vex.dialog.buttons.YES, {
-							text: _('Cancel'),
-							className: 'button-secondary vex-dialog-button-cancel',
-							click: function() {
-								this.value = 'cancel';
-								this.close();
-							}})
-					);
-				} else {
-					dialogButtons.push(
-						$.extend({}, vex.dialog.buttons.YES, {
-							text: _('Cancel'),
-							className: 'button-primary vex-dialog-button-cancel',
-							click: function() {
-								this.value = 'cancel';
-								this.close();
-							}})
-					);
-				}
-				if (!this._map.isReadOnlyMode()) {
-					vex.dialog.open({
-						unsafeMessage: '<h1 class="vex-dialog-title">' + vex._escapeHtml(_('Document has been changed')) + '</h1><p class="vex-dialog-message">' + vex._escapeHtml(_('Document has been changed in storage. What would you like to do with your unsaved changes?')) + '</p>',
-						escapeButtonCloses: false,
-						overlayClosesOnClick: false,
-						contentClassName: 'vex-content vex-3btns',
-						buttons: dialogButtons,
-						showCloseButton: true,
-						callback: function(value) {
-							if (value === 'discard') {
-								// They want to refresh the page and load document again for all
-								that.sendMessage('closedocument');
-							} else if (value === 'overwrite') {
-								// They want to overwrite
-								that.sendMessage('savetostorage force=1');
-							} else if (value === 'saveas') {
-								var filename = that._map['wopi'].BaseFileName;
-								if (filename) {
-									filename = L.LOUtil.generateNewFileName(filename, '_new');
-									that._map.saveAs(filename);
-								}
-							}
-						},
-						afterOpen: function() {
-							this.contentEl.style.width = '600px';
-						}
-					});
-				}
+				if (this._map.isReadOnlyMode())
+					return;
+				else
+					this._showDocumentConflictPopUp();
 
 				return;
 			}
@@ -1017,19 +923,18 @@ app.definitions.Socket = L.Class.extend({
 				this._map.fire('error', {msg: errorMessages.docloadtimeout});
 			} else if (errorKind.startsWith('docunloading')) {
 				// The document is unloading. Have to wait a bit.
-				this._map._active = false;
+				app.idleHandler._active = false;
 
-				clearTimeout(vex.timer);
+				clearTimeout(this.timer);
 				if (this.ReconnectCount++ >= 10) {
 					this._map.fire('error', {msg: errorMessages.docunloadinggiveup});
 					return; // Give up.
 				}
 
-				map = this._map;
-				vex.timer = setInterval(function() {
+				this.timer = setInterval(function() {
 					try {
 						// Activate and cancel timer and dialogs.
-						map._activate();
+						app.idleHandler._activate();
 					} catch (error) {
 						window.app.console.warn('Cannot activate map');
 					}
@@ -1042,33 +947,14 @@ app.definitions.Socket = L.Class.extend({
 			}
 
 			if (passwordNeeded) {
-				// Ask the user for password
-				vex.dialog.open({
-					contentClassName: 'vex-has-inputs',
-					message: msg,
-					input: '<input name="password" type="password" required />',
-					buttons: [
-						$.extend({}, vex.dialog.buttons.NO, { text: _('Cancel') }),
-						$.extend({}, vex.dialog.buttons.YES, { text: _('OK') })
-					],
-					callback: L.bind(function(data) {
-						if (data) {
-							this._map._docPassword = data.password;
-							if (window.ThisIsAMobileApp) {
-								window.postMobileMessage('loadwithpassword password=' + data.password);
-							}
-							this._map.loadDocument();
-						} else if (passwordType === 'to-modify') {
-							this._map._docPassword = '';
-							this._map.loadDocument();
-						} else {
-							this._map.fire('postMessage', {msgId: 'UI_Cancel_Password'});
-							this._map.hideBusy();
-						}
-					}, this)
-				});
+				this._askForDocumentPassword(passwordType, msg);
 				return;
 			}
+		}
+		else if (textMsg.startsWith('error:') && command.errorCmd === 'dialogevent' && command.errorKind === 'cantchangepass') {
+			var msg = _('Only the document owner can change the password.');
+			this._map.uiManager.showInfoModal('cool_alert', '', msg, '', _('OK'));
+			return;
 		}
 		else if (textMsg.startsWith('error:') && !this._map._docLayer) {
 			textMsg = textMsg.substring(6);
@@ -1082,7 +968,7 @@ app.definitions.Socket = L.Class.extend({
 				textMsg = errorMessages.serviceunavailable;
 			}
 			this._map._fatal = true;
-			this._map._active = false; // Practically disconnected.
+			app.idleHandler._active = false; // Practically disconnected.
 			this._map.fire('error', {msg: textMsg});
 		}
 		else if (textMsg.startsWith('fontsmissing:')) {
@@ -1094,7 +980,7 @@ app.definitions.Socket = L.Class.extend({
 				msg += fontsMissingObj.fontsmissing[i];
 			}
 
-			if (!this._map.welcome.isGuest() && this._map.welcome.shouldWelcome() && window.autoShowWelcome)
+			if (this._map.welcome && !this._map.welcome.isGuest() && this._map.welcome.shouldWelcome() && window.autoShowWelcome)
 			{
 				setTimeout(function() {
 					this._map.uiManager.showInfoModal('fontsmissing', _('Missing Fonts'), msg, null, _('Close'));
@@ -1140,12 +1026,11 @@ app.definitions.Socket = L.Class.extend({
 			textMsg = textMsg.substring(len);
 			if (textMsg.startsWith('saveas:')) {
 				var userName = command.username ? command.username : _('Someone');
-				vex.dialog.confirm({
-					message: _('%userName saved this document as %fileName. Do you want to join?').replace('%userName', userName).replace('%fileName', command.filename),
-					callback: L.bind(function (val) {
-						if (val) this._renameOrSaveAsCallback(textMsg, command);
-					}, this)
-				});
+				var message = _('%userName saved this document as %fileName. Do you want to join?').replace('%userName', userName).replace('%fileName', command.filename);
+
+				this._map.uiManager.showConfirmModal('save-as-warning', '', message, _('OK'), function() {
+					this._renameOrSaveAsCallback(textMsg, command);
+				}.bind(this));
 			}
 		}
 		else if (textMsg.startsWith('statusindicator:')) {
@@ -1154,8 +1039,7 @@ app.definitions.Socket = L.Class.extend({
 			if (textMsg.startsWith('statusindicator: ready')) {
 				// We're connected: cancel timer and dialog.
 				this.ReconnectCount = 0;
-				clearTimeout(vex.timer);
-				vex.closeAll();
+				clearTimeout(this.timer);
 			}
 		}
 		else if (window.ThisIsAMobileApp && textMsg.startsWith('mobile:')) {
@@ -1214,7 +1098,8 @@ app.definitions.Socket = L.Class.extend({
 				}
 			}
 
-			// Decode UTF-8 in case it is binary frame
+			// Decode UTF-8 in case it is binary frame. Disable this block
+			// in the iOS app as the image data is not URL encoded.
 			if (typeof e.data === 'object') {
 				// FIXME: Not sure what this code is supposed to do. Doesn't
 				// decodeURIComponent() exactly reverse what window.escape() (which
@@ -1271,6 +1156,59 @@ app.definitions.Socket = L.Class.extend({
 	_exportAsCallback: function(command) {
 		this._map.hideBusy();
 		this._map.uiManager.showInfoModal('exported-success', _('Exported to storage'), _('Successfully exported: ') + decodeURIComponent(command.filename), '', _('OK'));
+	},
+
+	_askForDocumentPassword: function(passwordType, msg) {
+		this._map.uiManager.showInputModal('password-popup', '', msg, '', _('OK'), function(data) {
+			if (data) {
+				this._map._docPassword = data;
+				if (window.ThisIsAMobileApp) {
+					window.postMobileMessage('loadwithpassword password=' + data);
+				}
+				this._map.loadDocument();
+			} else if (passwordType === 'to-modify') {
+				this._map._docPassword = '';
+				this._map.loadDocument();
+			} else {
+				this._map.fire('postMessage', {msgId: 'UI_Cancel_Password'});
+				this._map.hideBusy();
+			}
+		}.bind(this), true /* password input */);
+	},
+
+	_showDocumentConflictPopUp: function() {
+		var buttonList = [];
+		var callbackList = [];
+
+		buttonList.push({ id: 'cancel-conflict-popup', text: _('Cancel') });
+		callbackList.push({ id: 'cancel-conflict-popup', func_: null });
+
+		buttonList.push({ id: 'discard-button', text: _('Discard') });
+		buttonList.push({ id: 'overwrite-button', text: _('Overwrite') });
+
+		callbackList.push({id: 'discard-button', func_: function() {
+			this.sendMessage('closedocument');
+		}.bind(this) });
+
+		callbackList.push({id: 'overwrite-button', func_: function() {
+			this.sendMessage('savetostorage force=1'); }.bind(this)
+		});
+
+		if (!this._map['wopi'].UserCanNotWriteRelative) {
+			buttonList.push({ id: 'save-to-new-file', text: _('Save to new file') });
+			callbackList.push({ id: 'save-to-new-file', func_: function() {
+				var filename = this._map['wopi'].BaseFileName;
+				if (filename) {
+					filename = L.LOUtil.generateNewFileName(filename, '_new');
+					this._map.saveAs(filename);
+				}
+			}.bind(this)});
+		}
+
+		var title = _('Document has been changed');
+		var message = _('Document has been changed in storage. What would you like to do with your unsaved changes?');
+
+		this._map.uiManager.showModalWithCustomButtons('document-conflict-popup', title, message, false, buttonList, callbackList);
 	},
 
 	_renameOrSaveAsCallback: function(textMsg, command) {
@@ -1552,9 +1490,9 @@ app.definitions.Socket = L.Class.extend({
 		if (this.ReconnectCount > 0)
 			return;
 
-		var isActive = this._map._active;
+		var isActive = app.idleHandler._active;
 		this._map.hideBusy();
-		this._map._active = false;
+		app.idleHandler._active = false;
 
 		if (this._map._docLayer) {
 			this._map._docLayer.removeAllViews();
@@ -1581,9 +1519,9 @@ app.definitions.Socket = L.Class.extend({
 		setTimeout(function () {
 			if (!that._reconnecting) {
 				that._reconnecting = true;
-				if (!that._map._documentIdle)
+				if (!app.idleHandler._documentIdle)
 					that._map.showBusy(_('Reconnecting...'), false);
-				that._map._activate();
+				app.idleHandler._activate();
 			}
 		}, 1 /* ms */);
 
@@ -1591,7 +1529,7 @@ app.definitions.Socket = L.Class.extend({
 			this._map.setPermission('view');
 		}
 
-		if (!this._map['wopi'].DisableInactiveMessages)
+		if (!this._map['wopi'].DisableInactiveMessages && app.sectionContainer && !app.sectionContainer.testing)
 			this._map.uiManager.showSnackbar(_('The server has been disconnected.'));
 	},
 

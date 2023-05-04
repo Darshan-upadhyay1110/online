@@ -2,7 +2,7 @@
 /*
 	Socket to be intialized on opening the overview page in Admin console
 */
-/* global DlgYesNo _ vex $ Util AdminSocketBase Admin */
+/* global DlgYesNo _ $ Util AdminSocketBase Admin */
 
 
 function getCollapsibleClass(id) {
@@ -155,6 +155,16 @@ function upsertDocsTable(doc, sName, socket, wopiHost) {
 	if (add === true) { row.appendChild(isModifiedCell); } else { row.cells[0] = isModifiedCell; }
 	isModifiedCell.className = 'has-text-centered';
 
+	var isUploadedCell = document.createElement('td');
+	isUploadedCell.id = 'up' + doc['pid'];
+	isUploadedCell.innerText = doc['uploaded'];
+	if (add === true) {
+		row.appendChild(isUploadedCell);
+	} else {
+		row.cells[0] = isUploadedCell;
+	}
+	isUploadedCell.className = 'has-text-centered';
+
 	// TODO: Is activeViews always the same with viewer count? We will hide this for now. If they are not same, this will be added to Users column like: 1/2 active/user(s).
 	if (add === true) {
 		var viewsCell = document.createElement('td');
@@ -221,7 +231,7 @@ var AdminSocketOverview = AdminSocketBase.extend({
 		this.base.call(this);
 
 		this.socket.send('documents');
-		this.socket.send('subscribe adddoc rmdoc resetidle propchange modifications');
+		this.socket.send('subscribe adddoc rmdoc resetidle propchange modifications uploaded');
 
 		this._getBasicStats();
 		var socketOverview = this;
@@ -243,9 +253,6 @@ var AdminSocketOverview = AdminSocketBase.extend({
 				$(this).html(Util.humanizeSecs(newSecs));
 			});
 		}, 1000);
-
-		// Dialog uses <a href='#' - which triggers popstate
-		vex.defaultOptions.closeAllOnPopState = false;
 	},
 
 	onSocketMessage: function(e) {
@@ -290,6 +297,7 @@ var AdminSocketOverview = AdminSocketBase.extend({
 				'elapsedTime': '0',
 				'idleTime': '0',
 				'modified': 'No',
+				'uploaded': 'Yes',
 				'views': [{ 'sessionid': docProps[2], 'userName': decodeURI(docProps[3]) }]
 			};
 
@@ -382,6 +390,19 @@ var AdminSocketOverview = AdminSocketBase.extend({
 			var $mod = $(document.getElementById('mod' + sPid));
 			$mod.text(value);
 		}
+		else if (textMsg.startsWith('uploaded')) {
+			textMsg = textMsg.substring('uploaded'.length);
+			docProps = textMsg.trim().split(' ');
+			if (docProps.length === 2) {
+				sPid = docProps[0];
+				var value = docProps[1];
+
+				var up = $(document.getElementById('up' + sPid));
+				if (up !== undefined) {
+					up.text(value);
+				}
+			}
+		}
 		else if (e.data == 'InvalidAuthToken' || e.data == 'NotAuthenticated') {
 			var msg;
 			if (window.location.protocol === 'http:')
@@ -394,7 +415,14 @@ var AdminSocketOverview = AdminSocketBase.extend({
 				msg =  _('Failed to authenticate this session over protocol %0');
 				msg = msg.replace('%0', window.location.protocol);
 			}
-			vex.dialog.alert({ message: msg });
+
+			var dialog = (new DlgYesNo())
+				.title(_('Warning'))
+				.text(_(msg))
+				.yesButtonText(_('OK'))
+				.noButtonText(_('Cancel'))
+				.type('warning');
+			dialog.open();
 		}
 	},
 

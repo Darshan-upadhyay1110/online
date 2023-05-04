@@ -19,14 +19,18 @@
  *     type: 'treelistbox',
  *     headers: [ { text: 'first column' }, { text: 'second' }],
  *     entries: [
- *         { row: 0, columns [ { text: 'a' }, { text: 'b' } ] },
- *         { row: 1, columns [ { text: 'a2' }, { text: 'b2' }, selected: true ]}
+ *         { row: 0, columns [ { text: 'a' }, { collapsed: 'collapsedIcon.svg' } ] },
+ *         { row: 1, columns [ { text: 'a2' }, { expanded: 'expandedIcon.svg' }, selected: true ]}
  *     ]
  * }
- * 
+ *
  * 'row' property is used in the callback to differentiate entries
  * 'state' property defines if entry has the checkbox (false/true), when is missing - no checkbox
  * 'ondemand' property can be set to provide nodes lazy loading
+ *
+ * Copyright the Collabora Online contributors.
+ *
+ * SPDX-License-Identifier: MPL-2.0
  */
 
 /* global $ JSDialog */
@@ -34,6 +38,7 @@
 function _createCheckbox(parentContainer, treeViewData, builder, entry) {
 	var checkbox = L.DomUtil.create('input', builder.options.cssClass + ' ui-treeview-checkbox', parentContainer);
 	checkbox.type = 'checkbox';
+	checkbox.tabIndex = -1;
 
 	if (entry.state === 'true' || entry.state === true)
 		checkbox.checked = true;
@@ -53,9 +58,55 @@ function _createCheckbox(parentContainer, treeViewData, builder, entry) {
 	return checkbox;
 }
 
-function _treelistboxEntry(parentContainer, treeViewData, entry, builder) {
+function _selectEntry(span, checkbox) {
+	L.DomUtil.addClass(span, 'selected');
+	span.setAttribute('aria-selected', true);
+	span.tabIndex = 0;
+	if (checkbox)
+		checkbox.removeAttribute('tabindex');
+}
+
+function _unselectEntry(item) {
+	L.DomUtil.removeClass(item, 'selected');
+	item.removeAttribute('aria-selected');
+	item.removeAttribute('tabindex');
+	var itemCheckbox = item.querySelector('input');
+	if (itemCheckbox)
+		itemCheckbox.tabIndex = -1;
+}
+
+function _createClickFunction(entryClass, parentContainer, span, checkbox, select, activate,
+	builder, treeViewData, entry) {
+	return function () {
+		parentContainer.querySelectorAll(entryClass)
+			.forEach(function (item) { _unselectEntry(item); });
+
+		_selectEntry(span, checkbox);
+
+		if (select)
+			builder.callback('treeview', 'select', treeViewData, entry.row, builder);
+
+		if (activate)
+			builder.callback('treeview', 'activate', treeViewData, entry.row, builder);
+	};
+}
+
+function _getCellIconId(cellData) {
+	var iconId = cellData.collapsed ? cellData.collapsed : cellData.expanded;
+	var newLength = iconId.lastIndexOf('.');
+	if (newLength > 0)
+		iconId = iconId.substr(0, newLength).replaceAll('/', '');
+	else
+		iconId = iconId.replaceAll('/', '');
+	return iconId;
+}
+
+function _treelistboxEntry(parentContainer, treeViewData, entry, builder, isTreeView, treeRoot) {
 	if (entry.text == '<dummy>')
 		return;
+
+	treeRoot = treeRoot ? treeRoot : parentContainer;
+
 	var disabled = treeViewData.enabled === 'false' || treeViewData.enabled === false;
 
 	var li = L.DomUtil.create('li', builder.options.cssClass, parentContainer);
@@ -79,51 +130,47 @@ function _treelistboxEntry(parentContainer, treeViewData, entry, builder) {
 	}
 
 	var span = L.DomUtil.create('span', builder.options.cssClass + ' ui-treeview-entry ' + (entry.children ? ' ui-treeview-expandable' : 'ui-treeview-notexpandable'), li);
+	span.setAttribute('role', isTreeView ? 'treeitem' : 'option');
 
 	var expander = L.DomUtil.create('div', builder.options.cssClass + ' ui-treeview-expander ', span);
-
-	if (entry.selected && (entry.selected === 'true' || entry.selected === true))
-		L.DomUtil.addClass(span, 'selected');
 
 	if (entry.state !== undefined)
 		var checkbox = _createCheckbox(span, treeViewData, builder, entry);
 
+	if (entry.selected && (entry.selected === 'true' || entry.selected === true))
+		_selectEntry(span, checkbox);
+
 	var text = L.DomUtil.create('span', builder.options.cssClass + ' ui-treeview-cell', span);
 	for (var i in entry.columns) {
 		if (entry.columns[i].collapsed || entry.columns[i].expanded) {
-			var iconId = entry.columns[i].collapsed ? entry.columns[i].collapsed : entry.columns[i].expanded;
-			var newLength = iconId.lastIndexOf('.');
-			if (newLength > 0)
-				iconId = iconId.substr(0, newLength).replaceAll('/', '');
-			else
-				iconId = iconId.replaceAll('/', '');
 			var icon = L.DomUtil.create('img', 'ui-listview-icon', text);
+			var iconId = _getCellIconId(entry.columns[i]);
 			icon.src = builder._createIconURL(iconId, true);
 		} else if (entry.columns[i].text) {
 			var innerText = L.DomUtil.create('span', builder.options.cssClass + ' ui-treeview-cell-text', text);
 			innerText.innerText = entry.columns[i].text || entry.text;
-			innerText.tabIndex = 0;
 		}
 	}
+
+	var toggleFunction = function() {
+		$(span).toggleClass('collapsed');
+	};
+
+	var expandFunction = function () {
+		if (entry.ondemand && L.DomUtil.hasClass(span, 'collapsed'))
+			builder.callback('treeview', 'expand', treeViewData, entry.row, builder);
+		toggleFunction();
+	};
 
 	if (entry.children) {
 		var ul = L.DomUtil.create('ul', builder.options.cssClass, li);
 		for (var i in entry.children) {
-			_treelistboxEntry(ul, treeViewData, entry.children[i], builder);
+			_treelistboxEntry(ul, treeViewData, entry.children[i], builder, isTreeView, treeRoot);
 		}
-
-		var toggleFunction = function() {
-			$(span).toggleClass('collapsed');
-		};
 
 		if (!disabled) {
 			if (entry.ondemand) {
-				expander.tabIndex = 0;
-				L.DomEvent.on(expander, 'click', function() {
-					if (entry.ondemand && L.DomUtil.hasClass(span, 'collapsed'))
-						builder.callback('treeview', 'expand', treeViewData, entry.row, builder);
-					toggleFunction();
-				});
+				L.DomEvent.on(expander, 'click', expandFunction);
 			} else {
 				$(expander).click(toggleFunction);
 			}
@@ -137,44 +184,31 @@ function _treelistboxEntry(parentContainer, treeViewData, entry, builder) {
 			L.DomUtil.addClass(span, 'collapsed');
 	}
 
-	if (!disabled && entry.state == null) {
+	if (!disabled) {
 		var singleClick = treeViewData.singleclickactivate === 'true' || treeViewData.singleclickactivate === true;
-		var clickFunction = function() {
-			parentContainer.querySelectorAll('.ui-treeview-entry')
-				.forEach(function (item) { L.DomUtil.removeClass(item, 'selected'); });
-			L.DomUtil.addClass(span, 'selected');
-
-			builder.callback('treeview', 'select', treeViewData, entry.row, builder);
-			if (singleClick) {
-				builder.callback('treeview', 'activate', treeViewData, entry.row, builder);
-			}
-		};
+		var clickFunction = _createClickFunction('.ui-treeview-entry', treeRoot, span, checkbox,
+			true, singleClick, builder, treeViewData, entry);
 
 		text.addEventListener('click', clickFunction);
-		text.addEventListener('keydown', function onEvent(event) {
+		span.addEventListener('keydown', function onEvent(event) {
 			var preventDef = false;
-			var listElements = $('#' + treeViewData.id + ' li');
-			var currIndex = parseInt(entry.row);
-			var treeLength = treeViewData.entries.length;
-			var spanElement = 'span.ui-treeview-cell';
-			if (event.key === 'Enter') {
+			if (event.key === 'Enter' || event.key === ' ') {
 				clickFunction();
+				if (checkbox)
+					checkbox.click();
 				preventDef = true;
-			} else if (event.key === 'ArrowDown') {
-				if (currIndex === treeLength - 1)
-					listElements.eq(0).find(spanElement).focus();
+			} else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+				if (entry.ondemand)
+					expandFunction();
 				else
-					listElements.eq(currIndex + 1).find(spanElement).focus();
+					toggleFunction();
 				preventDef = true;
-			} else if (event.key === 'ArrowUp') {
-				if (currIndex === 0)
-					listElements.eq(treeLength - 1).find(spanElement).focus();
-				else
-					listElements.eq(currIndex - 1).find(spanElement).focus();
-				preventDef = true;
-			} else if (builder.callback('treeview', 'keydown', { treeViewData: treeViewData, key: event.key }, entry.row, builder)) {
-				preventDef = true;
+			} else if (event.key === 'Tab') {
+				if (!L.DomUtil.hasClass(span, 'selected'))
+					_unselectEntry(span); // remove tabIndex
+
 			}
+
 			if (preventDef) {
 				event.preventDefault();
 				event.stopPropagation();
@@ -182,13 +216,8 @@ function _treelistboxEntry(parentContainer, treeViewData, entry, builder) {
 		});
 
 		if (!singleClick) {
-			$(text).dblclick(function() {
-				parentContainer.querySelectorAll('.ui-treeview-entry')
-					.forEach(function (item) { L.DomUtil.removeClass(item, 'selected'); });
-				L.DomUtil.addClass(span, 'selected');
-
-				builder.callback('treeview', 'activate', treeViewData, entry.row, builder);
-			});
+			$(text).dblclick(_createClickFunction('.ui-treeview-entry', treeRoot, span, checkbox,
+				false, true, builder, treeViewData, entry));
 		}
 	}
 }
@@ -196,55 +225,47 @@ function _treelistboxEntry(parentContainer, treeViewData, entry, builder) {
 function _headerlistboxEntry(parentContainer, treeViewData, entry, builder) {
 	var disabled = treeViewData.enabled === 'false' || treeViewData.enabled === false;
 
-	if (entry.selected && (entry.selected === 'true' || entry.selected === true))
-		L.DomUtil.addClass(parentContainer, 'selected');
-
 	if (entry.state !== undefined) {
 		var td = L.DomUtil.create('td', '', parentContainer);
-		_createCheckbox(td, treeViewData, builder, entry);
+		var checkbox = _createCheckbox(td, treeViewData, builder, entry);
 	}
+
+	if (entry.selected && (entry.selected === 'true' || entry.selected === true))
+		_selectEntry(parentContainer, checkbox);
+
+	var clickFunction = _createClickFunction('.ui-listview-entry', parentContainer.parentNode,
+		parentContainer, checkbox, true, false, builder, treeViewData, entry);
 
 	for (var i in entry.columns) {
 		var td = L.DomUtil.create('td', '', parentContainer);
+		td.setAttribute('role', 'gridcell');
 
 		if (entry.columns[i].collapsed || entry.columns[i].expanded) {
-			var iconId = entry.columns[i].collapsed ? entry.columns[i].collapsed : entry.columns[i].expanded;
-			var newLength = iconId.lastIndexOf('.');
-			if (newLength > 0)
-				iconId = iconId.substr(0, newLength).replaceAll('/', '');
-			else
-				iconId = iconId.replaceAll('/', '');
 			var icon = L.DomUtil.create('img', 'ui-listview-icon', td);
+			var iconId = _getCellIconId(entry.columns[i]);
 			L.DomUtil.addClass(icon, iconId + 'img');
 			icon.src = builder._createIconURL(iconId, true);
 		} else if (entry.columns[i].text)
 			td.innerText = entry.columns[i].text;
 
-		if (!disabled) {
-			var clickFunction = function() {
-				parentContainer.parentNode.querySelectorAll('.ui-listview-entry')
-					.forEach(function (item) { L.DomUtil.removeClass(item, 'selected'); });
-				L.DomUtil.addClass(parentContainer, 'selected');
-
-				builder.callback('treeview', 'select', treeViewData, entry.row, builder);
-			};
-
+		if (!disabled)
 			$(td).click(clickFunction);
+	}
 
-			parentContainer.addEventListener('keydown', function onEvent(event) {
-				var preventDef = false;
-				if (event.key === 'Enter') {
-					clickFunction();
-					preventDef = true;
-				} else if (builder.callback('treeview', 'keydown', { treeViewData: treeViewData, key: event.key }, entry.row, builder)) {
-					preventDef = true;
-				}
-				if (preventDef) {
-					event.preventDefault();
-					event.stopPropagation();
-				}
-			});
-		}
+	if (!disabled) {
+		parentContainer.addEventListener('keydown', function onEvent(event) {
+			if (event.key === 'Enter' || event.key === ' ') {
+				clickFunction();
+				if (checkbox)
+					checkbox.click();
+				parentContainer.focus();
+				event.preventDefault();
+				event.stopPropagation();
+			} else if (event.key === 'Tab') {
+				if (!L.DomUtil.hasClass(parentContainer, 'selected'))
+					_unselectEntry(parentContainer); // remove tabIndex
+			}
+		});
 	}
 }
 
@@ -257,6 +278,7 @@ function _hasIcon(columns) {
 
 function _createHeaders(tbody, data, builder) {
 	var headers = L.DomUtil.create('tr', builder.options.cssClass + ' ui-treeview-header', tbody);
+	headers.setAttribute('role', 'row');
 	var hasCheckboxes = data.entries && data.entries.length && data.entries[0].state !== undefined;
 	if (hasCheckboxes)
 		data.headers = [{ text: '' }].concat(data.headers);
@@ -265,6 +287,7 @@ function _createHeaders(tbody, data, builder) {
 		data.headers = [{ text: '' }].concat(data.headers);
 	for (var h in data.headers) {
 		var header = L.DomUtil.create('th', builder.options.cssClass, headers);
+		header.setAttribute('role', 'columnheader');
 		var headerText = L.DomUtil.create('span', builder.options.cssClass + ' ui-treeview-header-text', header);
 		headerText.innerText = data.headers[h].text;
 		var headerSortIcon = L.DomUtil.create('span', builder.options.cssClass + ' ui-treeview-header-sort-icon', header);
@@ -333,9 +356,78 @@ function _createHeaders(tbody, data, builder) {
 	}
 }
 
+function _changeFocusedRow(listElements, fromIndex, toIndex) {
+	var nextElement = listElements.eq(toIndex).get(0);
+	nextElement.tabIndex = 0;
+	nextElement.focus();
+
+	var nextInput = listElements.eq(toIndex).find('td input');
+	if (nextInput && nextInput.length)
+		nextInput.get(0).removeAttribute('tabindex');
+
+	if (fromIndex >= 0) {
+		var oldElement = listElements.eq(fromIndex).get(0);
+		if (L.DomUtil.hasClass(oldElement, 'selected'))
+			return;
+
+		oldElement.removeAttribute('tabindex');
+		var oldInput = listElements.eq(fromIndex).find('td input');
+		if (oldInput && oldInput.length)
+			oldInput.get(0).tabIndex = -1;
+	}
+}
+
+function _getCurrentEntry(listElements) {
+	var focusedElement = document.activeElement;
+	// tr - row itself
+	var currIndex = listElements.index(focusedElement);
+	// input - child of a row
+	if (currIndex < 0)
+		currIndex = listElements.index(focusedElement.parentNode.parentNode);
+	// no focused entry - try with selected one
+	if (currIndex < 0) {
+		var selected = listElements.filter('.selected');
+		if (selected && selected.length)
+			currIndex = listElements.index(selected.get(0));
+	}
+
+	return currIndex;
+}
+
+function _handleKeyEvent(event, listElements, builder, data) {
+	var preventDef = false;
+	var treeLength = listElements.length;
+	var currIndex = _getCurrentEntry(listElements);
+
+	if (event.key === 'ArrowDown') {
+		if (currIndex < 0)
+			_changeFocusedRow(listElements, currIndex, 0);
+		else if (currIndex < treeLength - 1)
+			_changeFocusedRow(listElements, currIndex, currIndex + 1);
+
+		preventDef = true;
+	} else if (event.key === 'ArrowUp') {
+		if (currIndex < 0)
+			_changeFocusedRow(listElements, currIndex, treeLength - 1);
+		else if (currIndex > 0)
+			_changeFocusedRow(listElements, currIndex, currIndex - 1);
+
+		preventDef = true;
+	} else if (data.fireKeyEvents && builder.callback('treeview', 'keydown', { id: data.id, key: event.key }, currIndex, builder)) {
+		// used in mentions
+		preventDef = true;
+	}
+
+	if (preventDef) {
+		event.preventDefault();
+		event.stopPropagation();
+	}
+}
+
 function _treelistboxControl(parentContainer, data, builder) {
 	var table = L.DomUtil.create('table', builder.options.cssClass + ' ui-treeview', parentContainer);
 	table.id = data.id;
+	table.tabIndex = 0;
 	var disabled = data.enabled === 'false' || data.enabled === false;
 	if (disabled)
 		L.DomUtil.addClass(table, 'disabled');
@@ -365,20 +457,41 @@ function _treelistboxControl(parentContainer, data, builder) {
 
 	if (isHeaderListBox) {
 		// list view with headers
+		table.setAttribute('role', 'grid');
+
 		for (var i in data.entries) {
 			var tr = L.DomUtil.create('tr', builder.options.cssClass + ' ui-listview-entry', tbody);
-			tr.tabIndex = 0;
+			tr.setAttribute('role', 'row');
 			_headerlistboxEntry(tr, data, data.entries[i], builder);
 		}
+
+		table.addEventListener('keydown', function onEvent(event) {
+			var listElements = $(tbody).children('.ui-listview-entry');
+			_handleKeyEvent(event, listElements, builder, data);
+		});
 
 		var firstSelected = tbody.querySelector('.ui-listview-entry.selected');
 	} else {
 		// tree view
+		var isRealTreeView = false;
+		for (i in data.entries) {
+			if (data.entries[i].children && data.entries[i].children.length) {
+				isRealTreeView = true;
+				break;
+			}
+		}
+		table.setAttribute('role', isRealTreeView ? 'tree' : 'listbox');
+
 		var ul = L.DomUtil.create('ul', builder.options.cssClass, tbody);
 
 		for (i in data.entries) {
-			_treelistboxEntry(ul, data, data.entries[i], builder);
+			_treelistboxEntry(ul, data, data.entries[i], builder, isRealTreeView);
 		}
+
+		table.addEventListener('keydown', function onEvent(event) {
+			var listElements = $(ul).find(isRealTreeView ? '.ui-treeview-cell-text' : '.ui-treeview-entry');
+			_handleKeyEvent(event, listElements, builder, data);
+		});
 
 		firstSelected = tbody.querySelector('.ui-treeview-entry.selected');
 	}

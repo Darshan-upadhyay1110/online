@@ -1,6 +1,6 @@
 /* -*- js-indent-level: 8 -*- */
 /* global errorMessages getParameterByName accessToken accessTokenTTL accessHeader createOnlineModule */
-/* global app L vex host idleTimeoutSecs outOfFocusTimeoutSecs _ */
+/* global app L host idleTimeoutSecs outOfFocusTimeoutSecs _ */
 /*eslint indent: [error, "tab", { "outerIIFEBody": 0 }]*/
 (function (global) {
 
@@ -24,16 +24,11 @@ else
 app.file.permission = getParameterByName('permission') || 'edit';
 
 var timestamp = getParameterByName('timestamp');
+var target = getParameterByName('target') || '';
 // Should the document go inactive or not
 var alwaysActive = getParameterByName('alwaysactive');
 // Cool Debug mode
 var debugMode = getParameterByName('debug');
-if (wopiSrc === '' && filePath === '' && !window.ThisIsAMobileApp) {
-	vex.dialog.alert(errorMessages.wrongwopisrc);
-}
-if (host === '' && !window.ThisIsAMobileApp) {
-	vex.dialog.alert(errorMessages.emptyhosturl);
-}
 
 var docURL, docParams;
 var isWopi = false;
@@ -52,6 +47,7 @@ var map = L.map('map', {
 	doc: docURL,
 	docParams: docParams,
 	timestamp: timestamp,
+	docTarget: target,
 	documentContainer: 'document-container',
 	debug: debugMode,
 	// the wopi and wopiSrc properties are in sync: false/true : empty/non-empty
@@ -70,7 +66,19 @@ map.addControl(map.uiManager);
 
 map.uiManager.initializeBasicUI();
 
+if (wopiSrc === '' && filePath === '' && !window.ThisIsAMobileApp) {
+	map.uiManager.showInfoModal('wrong-wopi-src-modal', '', errorMessages.wrongwopisrc, '', _('OK'), null, false);
+}
+if (host === '' && !window.ThisIsAMobileApp) {
+	map.uiManager.showInfoModal('empty-host-url-modal', '', errorMessages.emptyhosturl, '', _('OK'), null, false);
+}
+
+if (L.Map.versionBar)
+	map.addControl(L.Map.versionBar);
+
 L.Map.THIS = map;
+app.map = map;
+app.idleHandler.map = map;
 
 if (window.ThisIsTheEmscriptenApp) {
 	var Module = {
@@ -99,7 +107,7 @@ window.bundlejsLoaded = true;
 ////// Unsupported Browser Warning /////
 
 if (L.Browser.isInternetExplorer) {
-	vex.dialog.alert(_('Warning! The browser you are using is not supported.'));
+	map.uiManager.showInfoModal('browser-not-supported-modal', '', _('Warning! The browser you are using is not supported.'), '', _('OK'), null, false);
 }
 
 }(window));

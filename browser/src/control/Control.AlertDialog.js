@@ -3,7 +3,7 @@
  * L.Control.Dialog used for displaying alerts
  */
 
-/* global _ vex sanitizeUrl */
+/* global _ sanitizeUrl */
 L.Control.AlertDialog = L.Control.extend({
 	onAdd: function (map) {
 		// TODO: Better distinction between warnings and errors
@@ -13,32 +13,18 @@ L.Control.AlertDialog = L.Control.extend({
 
 	_onError: function(e) {
 		if (!this._map._fatal) {
-			// TODO. queue message errors and pop-up dialogs
-			// Close other dialogs before presenting a new one.
-			vex.closeAll();
+			this._map.uiManager.closeAll();
 		}
 
 		if (e.msg) {
 			if (window.ThisIsAMobileApp && this._map._fatal) {
-				var buttonsList = [];
-				buttonsList.push({
-					text: _('Close'),
-					type: 'button',
-					className: 'button-primary',
-					click: function() {
-						window.postMobileMessage('BYE');
-						vex.closeAll();
-					}
-				});
-
-				vex.dialog.alert({
-					message: e.msg,
-					buttons: buttonsList,
-					callback: function() {},
-				});
+				this._map.uiManager.showConfirmModal('cool_alert', '', e.msg, _('Close'), function() {
+					window.postMobileMessage('BYE');
+					this._map.uiManager.closeAll();
+				}.bind(this), true /* Hide cancel button */);
 			}
 			else
-				vex.dialog.alert(e.msg);
+				this._map.uiManager.showConfirmModal('cool_alert', '', e.msg, _('Close'), function() { /* Do nothing. */ }, true);
 		}
 		else if (e.cmd == 'load' && e.kind == 'docunloading') {
 			// Handled by transparently retrying.
@@ -47,14 +33,16 @@ L.Control.AlertDialog = L.Control.extend({
 			var url = e.url;
 			var messageText = window.errorMessages.leaving;
 
-			var isLinkValid = sanitizeUrl.sanitizeUrl(url) !== 'about:blank';
+			var isLinkValid = sanitizeUrl(url) !== 'about:blank';
 
 			if (!isLinkValid) {
 				messageText = window.errorMessages.invalidLink;
 			}
 
-			this._map.uiManager.showInfoModal('openlink', _('Open link'), messageText, url,
-				_('Open link'), function() {
+			this._map.uiManager.showInfoModal('openlink', _('External link'), messageText, url,
+				isLinkValid ? _('Open link') : _('OK'), function() {
+					if (!isLinkValid)
+						return;
 					if ('processCoolUrl' in window) {
 						url = window.processCoolUrl({ url: url, type: 'doc' });
 					}
@@ -67,7 +55,7 @@ L.Control.AlertDialog = L.Control.extend({
 			var msg = _('The server encountered a %0 error while parsing the %1 command.');
 			msg = msg.replace('%0', e.kind);
 			msg = msg.replace('%1', e.cmd);
-			vex.dialog.alert(msg);
+			this._map.uiManager.showInfoModal('cool_alert', '', msg, '', _('Close'), function() { /* Do nothing. */ }, false);
 		}
 	}
 });

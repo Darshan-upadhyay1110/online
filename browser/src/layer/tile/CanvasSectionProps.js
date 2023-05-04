@@ -1,10 +1,11 @@
+/* -*- js-indent-level: 8; fill-column: 100 -*- */
 /*
-* CanvasSectionProps
-*
-* It's really difficult to set drawing and processing orders of sections, since they are mostly defined on different files.
-* So we have this file, to manage their orders easily. Define them here, globally. Then you can use from everywhere.
-* Refer to CanvasSectionContainer.ts for definitions of processingOrder, drawingOrder and zIndex.
-*/
+ * CanvasSectionProps
+ *
+ * It's really difficult to set drawing and processing orders of sections, since they are mostly defined on different files.
+ * So we have this file, to manage their orders easily. Define them here, globally. Then you can use from everywhere.
+ * Refer to CanvasSectionContainer.ts for definitions of processingOrder, drawingOrder and zIndex.
+ */
 /* global L */
 
 L.CSections = {};

@@ -24,6 +24,7 @@ L.Map.WOPI = L.Handler.extend({
 	DownloadAsPostMessage: false,
 	UserCanNotWriteRelative: true,
 	EnableInsertRemoteImage: false,
+	EnableInsertRemoteLink: false,
 	EnableShare: false,
 	HideUserList: null,
 	CallPythonScriptSource: null,
@@ -118,6 +119,7 @@ L.Map.WOPI = L.Handler.extend({
 			overridenFileInfo.DownloadAsPostMessage : !!wopiInfo['DownloadAsPostMessage'];
 		this.UserCanNotWriteRelative = !!wopiInfo['UserCanNotWriteRelative'];
 		this.EnableInsertRemoteImage = !!wopiInfo['EnableInsertRemoteImage'];
+		this.EnableRemoteLinkPicker = !!wopiInfo['EnableRemoteLinkPicker'];
 		this.SupportsRename = !!wopiInfo['SupportsRename'];
 		this.UserCanRename = !!wopiInfo['UserCanRename'];
 		this.EnableShare = !!wopiInfo['EnableShare'];
@@ -126,6 +128,7 @@ L.Map.WOPI = L.Handler.extend({
 			app.file.permission = (app.file.permission === 'edit' ? 'edit': app.file.permission);
 		else
 			app.file.permission = 'readonly';
+		this.IsOwner = !!wopiInfo['IsOwner'];
 
 		if (wopiInfo['HideUserList'])
 			this.HideUserList = wopiInfo['HideUserList'].split(',');
@@ -317,6 +320,8 @@ L.Map.WOPI = L.Handler.extend({
 		else if (msg.MessageId === 'Insert_Button' &&
 			msg.Values && msg.Values.id && msg.Values.imgurl) {
 			this._map.uiManager.insertButton(msg.Values);
+		} else if (msg.MessageId === 'Send_UNO_Command' && msg.Values && msg.Values.Command) {
+			this._map.sendUnoCommand(msg.Values.Command, msg.Values.Args || '');
 		}
 		else if (msg.MessageId === 'Disable_Default_UIAction') {
 			// Disable the default handler and action for a UI command.
@@ -341,7 +346,7 @@ L.Map.WOPI = L.Handler.extend({
 		}
 
 		if (msg.MessageId === 'Grab_Focus') {
-			this._map.makeActive();
+			app.idleHandler._activate();
 			return;
 		}
 
@@ -398,6 +403,45 @@ L.Map.WOPI = L.Handler.extend({
 				this._map.insertURL(msg.Values.url);
 			}
 		}
+		else if (msg.MessageId == 'Action_InsertLink') {
+			if (msg.Values) {
+				var link = this._map.makeURLFromStr(msg.Values.url);
+				var text = this._map.getTextForLink();
+
+				text = text ? text.trim() : link;
+
+				var command = {
+					'Hyperlink.Text': {
+						type: 'string',
+						value: text
+					},
+					'Hyperlink.URL': {
+						type: 'string',
+						value: link
+					}
+				};
+				this._map.sendUnoCommand('.uno:SetHyperlink', command);
+				this._map.focus();
+			}
+		}
+		else if (msg.MessageId == 'Action_GetLinkPreview_Resp') {
+			var preview = document.querySelector('#hyperlink-pop-up-preview');
+			if (preview) {
+				// check if this is a preview for currently displayed link
+				if (preview.nextSibling && preview.nextSibling.innerText !== msg.Values.url)
+					return;
+
+				preview.innerText = '';
+				if (msg.Values.image && msg.Values.image.indexOf('data:') === 0) {
+					var image = L.DomUtil.create('img', '', preview);
+					image.src = msg.Values.image;
+				}
+				if (msg.Values.title) {
+					var title = L.DomUtil.create('p', '', preview);
+					title.innerText = msg.Values.title;
+				}
+			}
+		}
 		else if (msg.MessageId === 'Action_InsertFile') {
 			if (msg.Values && (msg.Values.File instanceof Blob)) {
 				this._map.fire('insertfile', {file: msg.Values.File});
@@ -432,10 +476,10 @@ L.Map.WOPI = L.Handler.extend({
 			if (msg.Values) {
 				if (msg.Values.Filename !== null && msg.Values.Filename !== undefined) {
 					this._notifySave = msg.Values['Notify'];
-					var dotPos = msg.Values.Filename.indexOf('.');
+					var nameParts = msg.Values.Filename.split('.');
 					var format = undefined;
-					if (dotPos > 0)
-						format = msg.Values.Filename.substr(dotPos + 1);
+					if (nameParts.length > 1)
+						format = nameParts.pop();
 					else {
 						this._map.uiManager.showInfoModal('error', _('Error'), _('File name should contain an extension.'), '', _('OK'));
 						return;

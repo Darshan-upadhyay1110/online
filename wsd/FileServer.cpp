@@ -50,6 +50,7 @@
 #include <Protocol.hpp>
 #include <Util.hpp>
 #include <common/ConfigUtil.hpp>
+#include <common/LangUtil.hpp>
 #if !MOBILEAPP
 #include <net/HttpHelper.hpp>
 #endif
@@ -486,7 +487,7 @@ void FileServerRequestHandler::handleRequest(const HTTPRequest& request,
     {
         bool noCache = false;
 #if ENABLE_DEBUG
-        noCache = true;
+        noCache = !COOLWSD::ForceCaching; // for cypress
 #endif
         Poco::Net::HTTPResponse response;
 
@@ -716,10 +717,11 @@ void FileServerRequestHandler::sendError(int errorCode, const Poco::Net::HTTPReq
         Poco::URI requestUri(request.getURI());
         std::string pathSanitized;
         Poco::URI::encode(requestUri.getPath(), "", pathSanitized);
-        headers += "Content-Type: text/html charset=UTF-8\r\n";
-        body = "<h1>Error: " + shortMessage + "</h1>" +
-            "<p>" + longMessage + ' ' + pathSanitized + "</p>" +
-            "<p>Please contact your system administrator.</p>";
+        // Let's keep message as plain text to avoid complications.
+        headers += "Content-Type: text/plain charset=UTF-8\r\n";
+        body = "Error: " + shortMessage + '\n' +
+            longMessage + ' ' + pathSanitized + '\n' +
+            "Please contact your system administrator.";
     }
     HttpHelper::sendError(errorCode, socket, body, headers);
 }
@@ -850,28 +852,6 @@ constexpr char BRANDING[] = "branding";
 constexpr char BRANDING_UNSUPPORTED[] = "branding-unsupported";
 #endif
 
-namespace
-{
-    bool isRtlLanguage(const std::string& language)
-    {
-        if (language.rfind("ar", 0) == 0 ||
-            language.rfind("arc", 0) == 0 ||
-            language.rfind("dv", 0) == 0 ||
-            language.rfind("fa", 0) == 0 ||
-            language.rfind("ha", 0) == 0 ||
-            language.rfind("he", 0) == 0 ||
-            language.rfind("khw", 0) == 0 ||
-            language.rfind("ks", 0) == 0 ||
-            language.rfind("ku", 0) == 0 ||
-            language.rfind("ps", 0) == 0 ||
-            language.rfind("ur", 0) == 0 ||
-            language.rfind("yi", 0) == 0)
-            return true;
-
-        return false;
-    }
-}
-
 void FileServerRequestHandler::preprocessFile(const HTTPRequest& request,
                                               const RequestDetails &requestDetails,
                                               Poco::MemoryInputStream& message,
@@ -974,7 +954,9 @@ void FileServerRequestHandler::preprocessFile(const HTTPRequest& request,
 
     bool useIntegrationTheme = config.getBool("user_interface.use_integration_theme", true);
     bool hasIntegrationTheme = (theme != "") && FileUtil::Stat(COOLWSD::FileServerRoot + "/browser/dist/" + theme).exists();
-    const std::string themePreFix = hasIntegrationTheme && useIntegrationTheme ? theme + "/" : "";
+    std::string escapedTheme;
+    Poco::URI::encode(theme, "'", escapedTheme);
+    const std::string themePreFix = hasIntegrationTheme && useIntegrationTheme ? escapedTheme + "/" : "";
     const std::string linkCSS("<link rel=\"stylesheet\" href=\"%s/browser/" COOLWSD_VERSION_HASH "/" + themePreFix + "%s.css\">");
     const std::string scriptJS("<script src=\"%s/browser/" COOLWSD_VERSION_HASH "/" + themePreFix + "%s.js\"></script>");
 
@@ -1051,7 +1033,7 @@ void FileServerRequestHandler::preprocessFile(const HTTPRequest& request,
     Poco::replaceInPlace(preprocess, std::string("%USER_INTERFACE_MODE%"), userInterfaceMode);
 
     std::string uiRtlSettings;
-    if (isRtlLanguage(requestDetails.getParam("lang")))
+    if (LangUtil::isRtlLanguage(requestDetails.getParam("lang")))
         uiRtlSettings = " dir=\"rtl\" ";
     Poco::replaceInPlace(preprocess, std::string("%UI_RTL_SETTINGS%"), uiRtlSettings);
 
@@ -1069,9 +1051,15 @@ void FileServerRequestHandler::preprocessFile(const HTTPRequest& request,
     {
         Poco::replaceInPlace(preprocess, std::string("%AUTO_SHOW_FEEDBACK%"), (std::string)"true");
     }
+
+
     Poco::replaceInPlace(preprocess, std::string("%FEEDBACK_URL%"), std::string(FEEDBACK_URL));
     Poco::replaceInPlace(preprocess, std::string("%WELCOME_URL%"), std::string(WELCOME_URL));
-    Poco::replaceInPlace(preprocess, std::string("%BUYPRODUCT_URL%"), buyProduct);
+
+    std::string escapedBuyProduct;
+    Poco::URI::encode(buyProduct, "'", escapedBuyProduct);
+    Poco::replaceInPlace(preprocess, std::string("%BUYPRODUCT_URL%"), escapedBuyProduct);
+
     Poco::replaceInPlace(preprocess, std::string("%DEEPL_ENABLED%"), (config.getBool("deepl.enabled", false) ? std::string("true"): std::string("false")));
     Poco::replaceInPlace(preprocess, std::string("%ZOTERO_ENABLED%"), (config.getBool("zotero.enable", true) ? std::string("true"): std::string("false")));
     Poco::URI indirectionURI(config.getString("indirection_endpoint.url", ""));
@@ -1085,7 +1073,9 @@ void FileServerRequestHandler::preprocessFile(const HTTPRequest& request,
     cspOss << "Content-Security-Policy: default-src 'none'; "
         "frame-src 'self' " << WELCOME_URL << " " << FEEDBACK_URL << " " << buyProduct <<
         " blob: " << documentSigningURL << "; "
-           "connect-src 'self' https://www.zotero.org https://api.zotero.org " << cnxDetails.getWebSocketUrl() << " " << indirectionURI.getAuthority() << "; "
+           "connect-src 'self' https://www.zotero.org https://api.zotero.org "
+           << cnxDetails.getWebSocketUrl() << " " << cnxDetails.getWebServerUrl() << " "
+           << indirectionURI.getAuthority() << "; "
            "script-src 'unsafe-inline' 'self'; "
            "style-src 'self' 'unsafe-inline'; "
            "font-src 'self' data:; "

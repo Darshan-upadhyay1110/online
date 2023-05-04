@@ -76,12 +76,12 @@ L.Control.Menubar = L.Control.extend({
 				{name: _('Share...'), id:'shareas', type: 'action'},
 				{name: _('See revision history'), id: 'rev-history', type: 'action'},
 				{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id: 'downloadas', type: 'menu', menu: [
-					{name: _('PDF Document (.pdf)'), id:'exportpdf', type: 'action'},
+					{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 					{name: _('ODF text document (.odt)'), id: 'downloadas-odt', type: 'action'},
 					{name: _('Word 2003 Document (.doc)'), id: 'downloadas-doc', type: 'action'},
 					{name: _('Word Document (.docx)'), id: 'downloadas-docx', type: 'action'},
 					{name: _('Rich Text (.rtf)'), id: 'downloadas-rtf', type: 'action'},
-					{name: _('EPUB (.epub)'), id:'exportepub', type: 'action'}]},
+					{name: _('EPUB (.epub)'), id: !window.ThisIsAMobileApp ? 'exportepub' : 'downloadas-epub', type: 'action'}]},
 				{name: _('Sign document'), id: 'signdocument', type: 'action'},
 				{name: _UNO('.uno:SetDocumentProperties', 'text'), uno: '.uno:SetDocumentProperties', id: 'properties'},
 				{type: 'separator'},
@@ -127,6 +127,7 @@ L.Control.Menubar = L.Control.extend({
 					{name: _('Toggle UI Mode'), id: 'toggleuimode', type: 'action'},
 					{name: _('Show Ruler'), id: 'showruler', type: 'action'},
 					{name: _('Show Status Bar'), id: 'showstatusbar', type: 'action'},
+					{name: _('Dark Mode'), id: 'toggledarktheme', type: 'action'},
 					{uno: '.uno:Sidebar'},
 					{type: 'separator'},
 					{name: _UNO('.uno:ShowResolvedAnnotations', 'text'), id: 'showresolved', type: 'action'},
@@ -167,6 +168,7 @@ L.Control.Menubar = L.Control.extend({
 				{name: _UNO('.uno:InsertColumnBreak', 'spreadsheet'), uno: '.uno:InsertColumnBreak'},
 				{type: 'separator'},
 				{name: _UNO('.uno:HyperlinkDialog'), id: 'inserthyperlink', type: 'action'},
+				{name: _('Smart Picker'), id: 'remotelink', type: 'action'},
 				{type: 'separator'},
 				{uno: '.uno:InsertSymbol'},
 				{name: _UNO('.uno:FormattingMarkMenu', 'text'), type: 'menu', menu: [
@@ -255,6 +257,7 @@ L.Control.Menubar = L.Control.extend({
 				{uno: '.uno:FontDialog'},
 				{uno: '.uno:ParagraphDialog'},
 				{uno: '.uno:OutlineBullet'},
+				{uno: '.uno:ThemeDialog'},
 				{type: 'separator'},
 				{uno: '.uno:PageDialog'},
 				{uno: '.uno:TitlePageDialog'},
@@ -322,7 +325,10 @@ L.Control.Menubar = L.Control.extend({
 			{name: _UNO('.uno:ToolsMenu', 'text'), id: 'tools', type: 'menu', menu: [
 				{uno: '.uno:SpellingAndGrammarDialog'},
 				{uno: '.uno:SpellOnline'},
-				{uno: '.uno:Translate'},
+				window.deeplEnabled ?
+					{
+						uno: '.uno:Translate'
+					}: {},
 				{uno: '.uno:ThesaurusDialog'},
 				{name: _UNO('.uno:LanguageMenu'), type: 'menu', menu: [
 					{name: _UNO('.uno:SetLanguageSelectionMenu', 'text'), type: 'menu', menu: [
@@ -371,7 +377,7 @@ L.Control.Menubar = L.Control.extend({
 				{name: _('Share...'), id:'shareas', type: 'action'},
 				{name: _('See revision history'), id: 'rev-history', type: 'action'},
 				{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id: 'downloadas', type: 'menu', menu: [
-					{name: _('PDF Document (.pdf)'), id: 'exportpdf', type: 'action'},
+					{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 					{name: _('ODF presentation (.odp)'), id: 'downloadas-odp', type: 'action'},
 					{name: _('PowerPoint 2003 Presentation (.ppt)'), id: 'downloadas-ppt', type: 'action'},
 					{name: _('PowerPoint Presentation (.pptx)'), id: 'downloadas-pptx', type: 'action'},
@@ -408,6 +414,7 @@ L.Control.Menubar = L.Control.extend({
 				   {name: _('Toggle UI Mode'), id: 'toggleuimode', type: 'action'},
 				   {name: _('Show Ruler'), id: 'showruler', type: 'action'},
 				   {name: _('Show Status Bar'), id: 'showstatusbar', type: 'action'},
+				   {name: _('Dark Mode'), id: 'toggledarktheme', type: 'action'},
 				   {uno: '.uno:Sidebar'},
 				   {type: 'separator'},
 				   {uno: '.uno:SlideMasterPage'},
@@ -427,6 +434,7 @@ L.Control.Menubar = L.Control.extend({
 				{name: _UNO('.uno:VerticalText'), uno: '.uno:VerticalText'},
 				{type: 'separator'},
 				{name: _UNO('.uno:HyperlinkDialog'), id: 'inserthyperlink', type: 'action'},
+				{name: _('Smart Picker'), id: 'remotelink', type: 'action'},
 				{type: 'separator'},
 				{uno: '.uno:InsertSymbol'},
 				{type: 'separator'},
@@ -513,7 +521,7 @@ L.Control.Menubar = L.Control.extend({
 				{name: _UNO('.uno:Print', 'presentation'), id: 'print', type: 'action'},
 				{name: _('See revision history'), id: 'rev-history', type: 'action'},
 				{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id: 'downloadas', type: 'menu', menu: [
-					{name: _('PDF Document (.pdf)'), id: 'exportpdf', type: 'action'},
+					{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 					{name: _('ODF Drawing (.odg)'), id: 'downloadas-odg', type: 'action'}
 				]},
 				{name: _UNO('.uno:SetDocumentProperties', 'presentation'), uno: '.uno:SetDocumentProperties', id: 'properties'},
@@ -545,6 +553,7 @@ L.Control.Menubar = L.Control.extend({
 				]).concat([
 					{type: 'separator'},
 					{name: _('Toggle UI Mode'), id: 'toggleuimode', type: 'action'},
+					{name: _('Dark Mode'), id: 'toggledarktheme', type: 'action'},
 					{uno: '.uno:Sidebar'},
 					{name: _('Show Status Bar'), id: 'showstatusbar', type: 'action'}
 				])},
@@ -556,6 +565,7 @@ L.Control.Menubar = L.Control.extend({
 				{uno: '.uno:InsertObjectChart'},
 				{type: 'separator'},
 				{name: _UNO('.uno:HyperlinkDialog'), id: 'inserthyperlink', type: 'action'},
+				{name: _('Smart Picker'), id: 'remotelink', type: 'action'},
 				{type: 'separator'},
 				{uno: '.uno:InsertSymbol'},
 				{type: 'separator'},
@@ -636,7 +646,7 @@ L.Control.Menubar = L.Control.extend({
 				{name: _('Share...'), id:'shareas', type: 'action'},
 				{name: _('See revision history'), id: 'rev-history', type: 'action'},
 				{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id:'downloadas', type: 'menu', menu: [
-					{name: _('PDF Document (.pdf)'), id: 'exportpdf', type: 'action'},
+					{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 					{name: _('ODF spreadsheet (.ods)'), id: 'downloadas-ods', type: 'action'},
 					{name: _('Excel 2003 Spreadsheet (.xls)'), id: 'downloadas-xls', type: 'action'},
 					{name: _('Excel Spreadsheet (.xlsx)'), id: 'downloadas-xlsx', type: 'action'},
@@ -672,6 +682,7 @@ L.Control.Menubar = L.Control.extend({
 				   {type: 'separator'},
 				   {name: _('Toggle UI Mode'), id: 'toggleuimode', type: 'action'},
 				   {name: _('Show Status Bar'), id: 'showstatusbar', type: 'action'},
+				   {name: _('Dark Mode'), id: 'toggledarktheme', type: 'action'},
 				   {uno: '.uno:Sidebar'},
 				   {name: _UNO('.uno:FreezePanes', 'spreadsheet', true), id: 'FreezePanes', type: 'action', uno: '.uno:FreezePanes'},
 				   {name: _UNO('.uno:FreezeCellsMenu', 'spreadsheet', true), id: 'FreezeCellsMenu', type: 'menu', uno: '.uno:FreezeCellsMenu', menu: [
@@ -692,6 +703,7 @@ L.Control.Menubar = L.Control.extend({
 				{uno: '.uno:FunctionDialog'},
 				{type: 'separator'},
 				{name: _UNO('.uno:HyperlinkDialog'), id: 'inserthyperlink', type: 'action'},
+				{name: _('Smart Picker'), id: 'remotelink', type: 'action'},
 				{uno: '.uno:InsertSymbol'},
 				{type: 'separator'},
 				{name: _UNO('.uno:InsertField', 'text'), type: 'menu', menu: [
@@ -799,6 +811,7 @@ L.Control.Menubar = L.Control.extend({
 				{uno: '.uno:DeleteCell'},
 				{uno: '.uno:DeleteRows'},
 				{uno: '.uno:DeleteColumns'},
+				{uno: '.uno:SheetRightToLeft'},
 			]},
 			{name: _UNO('.uno:DataMenu', 'spreadsheet'), id: 'data', type: 'menu', menu: [
 				{uno: '.uno:DataSort'},
@@ -886,12 +899,12 @@ L.Control.Menubar = L.Control.extend({
 
 			]},
 			{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id: 'downloadas', type: 'menu', menu: [
-				{name: _('PDF Document (.pdf)'), id: 'exportpdf', type: 'action'},
+				{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 				{name: _('ODF text document (.odt)'), id: 'downloadas-odt', type: 'action'},
 				{name: _('Word 2003 Document (.doc)'), id: 'downloadas-doc', type: 'action'},
 				{name: _('Word Document (.docx)'), id: 'downloadas-docx', type: 'action'},
 				{name: _('Rich Text (.rtf)'), id: 'downloadas-rtf', type: 'action'},
-				{name: _('EPUB (.epub)'), id: 'exportepub', type: 'action'}
+				{name: _('EPUB (.epub)'), id: !window.ThisIsAMobileApp ? 'exportepub' : 'downloadas-epub', type: 'action'},
 			]},
 			{name: _UNO('.uno:EditMenu', 'text'), id: 'editmenu', type: 'menu', menu: [
 				{uno: '.uno:Undo'},
@@ -914,7 +927,7 @@ L.Control.Menubar = L.Control.extend({
 			]},
 			{name: _UNO('.uno:ViewMenu', 'text'), id: 'view', type: 'menu', menu: [
 				{name: _UNO('.uno:FullScreen', 'text'), id: 'fullscreen', type: 'action', mobileapp: false},
-				{uno: '.uno:ControlCodes'},
+				{uno: '.uno:ControlCodes', id: 'formattingmarks'},
 				{uno: '.uno:SpellOnline'},
 				{name: _UNO('.uno:ShowResolvedAnnotations', 'text'), id: 'showresolved', type: 'action', uno: '.uno:ShowResolvedAnnotations'},
 			]
@@ -922,6 +935,10 @@ L.Control.Menubar = L.Control.extend({
 			{id: 'watermark', uno: '.uno:Watermark'},
 			{name: _('Page Setup'), id: 'pagesetup', type: 'action'},
 			{uno: '.uno:WordCountDialog'},
+			window.deeplEnabled ?
+				{
+					uno: '.uno:Translate'
+				} : {},
 			{name: _UNO('.uno:RunMacro'), id: 'runmacro', uno: '.uno:RunMacro'},
 			{name: _('Latest Updates'), id: 'latestupdates', type: 'action', iosapp: false},
 			{name: _('Send Feedback'), id: 'feedback', type: 'action', mobileapp: false},
@@ -943,7 +960,7 @@ L.Control.Menubar = L.Control.extend({
 				{name: _UNO('.uno:SetDocumentProperties', 'presentation'), uno: '.uno:SetDocumentProperties', id: 'properties'}
 			]},
 			{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id:'downloadas', type: 'menu', menu: [
-				{name: _('PDF Document (.pdf)'), id: 'exportpdf', type: 'action'},
+				{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 				{name: _('ODF presentation (.odp)'), id: 'downloadas-odp', type: 'action'},
 				{name: _('PowerPoint 2003 Presentation (.ppt)'), id: 'downloadas-ppt', type: 'action'},
 				{name: _('PowerPoint Presentation (.pptx)'), id: 'downloadas-pptx', type: 'action'},
@@ -1002,7 +1019,7 @@ L.Control.Menubar = L.Control.extend({
 				{name: _UNO('.uno:SetDocumentProperties', 'presentation'), uno: '.uno:SetDocumentProperties', id: 'properties'}
 			]},
 			{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id:'downloadas', type: 'menu', menu: [
-				{name: _('PDF Document (.pdf)'), id: 'exportpdf', type: 'action'},
+				{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 				{name: _('ODF Drawing (.odg)'), id: 'downloadas-odg', type: 'action'}
 			]},
 			{name: _UNO('.uno:EditMenu', 'presentation'), id: 'editmenu', type: 'menu', menu: [
@@ -1050,10 +1067,12 @@ L.Control.Menubar = L.Control.extend({
 				{name: _('See revision history'), id: 'rev-history', type: 'action'},
 				{type: 'separator'},
 				{name: _UNO('.uno:Print', 'spreadsheet'), id: 'print', type: 'action'},
+				{name: _('Define print area', 'spreadsheet'), uno: '.uno:DefinePrintArea' },
+				{name: _('Remove print area', 'spreadsheet'), uno: '.uno:DeletePrintArea' },
 				{name: _UNO('.uno:SetDocumentProperties', 'spreadsheet'), uno: '.uno:SetDocumentProperties', id: 'properties'}
 			]},
 			{name: !window.ThisIsAMobileApp ? _('Download as') : _('Export as'), id:'downloadas', type: 'menu', menu: [
-				{name: _('PDF Document (.pdf)'), id: 'exportpdf', type: 'action'},
+				{name: _('PDF Document (.pdf)'), id: !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', type: 'action'},
 				{name: _('ODF spreadsheet (.ods)'), id: 'downloadas-ods', type: 'action'},
 				{name: _('Excel 2003 Spreadsheet (.xls)'), id: 'downloadas-xls', type: 'action'},
 				{name: _('Excel Spreadsheet (.xlsx)'), id: 'downloadas-xlsx', type: 'action'}
@@ -1227,9 +1246,9 @@ L.Control.Menubar = L.Control.extend({
 		allowedViewModeActions: [
 			'savecomments', 'shareas', 'print', // file menu
 			'downloadas-odt', 'downloadas-doc', 'downloadas-docx', 'downloadas-rtf', // file menu
-			'downloadas-odp', 'downloadas-ppt', 'downloadas-pptx', 'downloadas-odg', 'exportpdf', 'exportepub', // file menu
+			'downloadas-odp', 'downloadas-ppt', 'downloadas-pptx', 'downloadas-odg', !window.ThisIsAMobileApp ? 'exportpdf' : 'downloadas-pdf', !window.ThisIsAMobileApp ? 'exportepub' : 'downloadas-epub', // file menu
 			'downloadas-ods', 'downloadas-xls', 'downloadas-xlsx', 'downloadas-csv', 'closedocument', // file menu
-			'fullscreen', 'zoomin', 'zoomout', 'zoomreset', 'showstatusbar', 'showresolved', // view menu
+			'fullscreen', 'zoomin', 'zoomout', 'zoomreset', 'showstatusbar', 'showresolved', 'toggledarktheme', // view menu
 			'about', 'keyboard-shortcuts', 'latestupdates', 'feedback', 'online-help', 'report-an-issue', // help menu
 			'insertcomment'
 		]
@@ -1500,7 +1519,7 @@ L.Control.Menubar = L.Control.extend({
 							self._map.fire('mobilewizard', {data: menuData});
 							$('#toolbar-hamburger').removeClass('menuwizard-closed').addClass('menuwizard-opened');
 							$('#mobile-wizard-header').hide();
-							$('#toolbar-mobile-back').hide();
+							$('#toolbar-mobile-back').css('visibility', 'hidden');
 							$('#formulabar').hide();
 						}
 					} else if (!window.mode.isMobile()) {
@@ -1512,7 +1531,7 @@ L.Control.Menubar = L.Control.extend({
 						window.mobileMenuWizard = false;
 						self._map.fire('closemobilewizard');
 						$('#toolbar-hamburger').removeClass('menuwizard-opened').addClass('menuwizard-closed');
-						$('#toolbar-mobile-back').show();
+						$('#toolbar-mobile-back').css('visibility', '');
 						if (self._map.getDocType() === 'spreadsheet')
 							$('#formulabar').show();
 					}
@@ -1641,7 +1660,12 @@ L.Control.Menubar = L.Control.extend({
 						} else {
 							$(aItem).removeClass(constChecked);
 						}
-
+					} else if (id == 'toggledarktheme') {
+						if (self._map.uiManager.getDarkModeState()) {
+							$(aItem).addClass(constChecked);
+						} else {
+							$(aItem).removeClass(constChecked);
+						}
 					} else if (id === 'showstatusbar') {
 						if (self._map.uiManager.isStatusBarVisible()) {
 							$(aItem).addClass(constChecked);
@@ -1655,7 +1679,6 @@ L.Control.Menubar = L.Control.extend({
 						} else {
 							$(aItem).text(_('Use Tabbed view'));
 						}
-
 					} else if (self._map.getDocType() === 'presentation' && (id === 'deletepage' || id === 'insertpage' || id === 'duplicatepage')) {
 						if (id === 'deletepage') {
 							itemState = self._map['stateChangeHandler'].getItemValue('.uno:DeletePage');
@@ -1771,14 +1794,16 @@ L.Control.Menubar = L.Control.extend({
 				}
 			}
 		} else if (id === 'shareas' || id === 'ShareAs') {
-			this._map.openShare();
+			this._map.dispatch('shareas');
 		} else if (id === 'print') {
 			this._map.print();
 		} else if (id.startsWith('downloadas-')
 			|| id.startsWith('saveas-')
 			|| id.startsWith('export')
 			|| id.startsWith('zotero')
-			|| id === 'deletepage') {
+			|| id === 'deletepage'
+			|| id === 'remotelink'
+			|| id === 'toggledarktheme') {
 			this._map.dispatch(id);
 		} else if (id === 'signdocument') {
 			this._map.showSignDocument();
@@ -1793,7 +1818,7 @@ L.Control.Menubar = L.Control.extend({
 		} else if (id === 'zoomin' && this._map.getZoom() < this._map.getMaxZoom()) {
 			this._map.zoomIn(1, null, true /* animate? */);
 		} else if (id === 'showresolved') {
-			this._map.showResolvedComments(!$(itNode).hasClass('lo-menu-item-checked'));
+			this._map.dispatch('showresolvedannotations');
 		} else if (id === 'zoomout' && this._map.getZoom() > this._map.getMinZoom()) {
 			this._map.zoomOut(1, null, true /* animate? */);
 		} else if (id === 'zoomreset') {
@@ -1831,11 +1856,11 @@ L.Control.Menubar = L.Control.extend({
 		} else if (id === 'forum') {
 			window.open('https://forum.collaboraonline.com', '_blank');
 		} else if (id === 'inserthyperlink') {
-			this._map.showHyperlinkDialog();
+			this._map.dispatch('hyperlinkdialog');
 		} else if (id === 'keyboard-shortcuts' || id === 'online-help') {
 			this._map.showHelp(id);
 		} else if (L.Params.revHistoryEnabled && (id === 'rev-history' || id === 'Rev-History' || id === 'last-mod')) {
-			this._map.openRevisionHistory();
+			this._map.dispatch('rev-history');
 		} else if (id === 'closedocument') {
 			window.onClose();
 		} else if (id === 'repair') {
@@ -1971,6 +1996,7 @@ L.Control.Menubar = L.Control.extend({
 			case 'pagesetup':
 			case 'watermark':
 			case 'properties':
+			case 'formattingmarks':
 				return false;
 			case 'insertcomment':
 			case 'savecomments':

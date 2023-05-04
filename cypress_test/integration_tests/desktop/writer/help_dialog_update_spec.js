@@ -68,12 +68,12 @@ describe('Help dialog screenshot updation', function() {
 		cy.get('#menu-editmenu').click()
 			.get('#menu-repair').click();
 
-		cy.get('.leaflet-popup-content-wrapper')
+		cy.get('.jsdialog-container.lokdialog_container')
 			.should('exist');
 
-		helper.waitUntilIdle('.leaflet-popup-content-wrapper');
+		helper.waitUntilIdle('.jsdialog-container.lokdialog_container');
 
-		cy.get('.leaflet-popup-content-wrapper')
+		cy.get('.jsdialog-container.lokdialog_container')
 			.screenshot('repair-document');
 
 		copyScreenshot('repair-document.png');
@@ -87,13 +87,13 @@ describe('Help dialog screenshot updation', function() {
 		cy.get('#tb_editbar_item_insertannotation')
 			.click();
 
-		cy.get('#new-mobile-comment-input-area').type('comment added');
+		cy.get('#input-modal-input').type('comment added');
 
-		cy.get('.vex-dialog-buttons .button-primary').click();
+		cy.get('.vex-dialog-buttons .button-primary').click(); // save button
 
 		cy.wait(1000);
 
-		cy.get('.cool-annotation-collapsed').click();
+		cy.get('.jsdialog-container.cool-annotation-collapsed').click();
 
 		cy.wait(1000);
 
@@ -153,7 +153,7 @@ describe('Help dialog screenshot updation', function() {
 		copyScreenshot('insert-table.png');
 	});
 
-	it('word count', function() {
+	it('Word count', function() {
 		cy.get('#menu-tools')
 			.click();
 
@@ -168,7 +168,7 @@ describe('Help dialog screenshot updation', function() {
 		copyScreenshot('word-count.png');
 	});
 
-	it('insert special', function() {
+	it('Insert special', function() {
 		cy.get('#toolbar-up > .w2ui-scroll-right')
 			.click();
 
@@ -188,7 +188,7 @@ describe('Help dialog screenshot updation', function() {
 		copyScreenshot('special-character.png');
 	});
 
-	it('manage changes', function() {
+	it('Manage changes', function() {
 		cy.get('#menu-editmenu')
 			.click()
 			.get('#menu-changesmenu')

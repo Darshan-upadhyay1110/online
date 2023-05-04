@@ -3,7 +3,7 @@
  * L.CanvasTileLayer is a layer with canvas based rendering.
  */
 
-/* global app L CanvasSectionContainer CanvasOverlay CDarkOverlay CSplitterLine CStyleData $ _ isAnyVexDialogActive CPointSet CPolyUtil CPolygon Cursor CCellCursor CCellSelection PathGroupType UNOKey UNOModifier Uint8ClampedArray Uint8Array */
+/* global app L CanvasSectionContainer CanvasOverlay CDarkOverlay CSplitterLine CStyleData $ _ CPointSet CPolyUtil CPolygon Cursor CCellCursor CCellSelection PathGroupType UNOKey UNOModifier Uint8ClampedArray Uint8Array */
 
 /*eslint no-extend-native:0*/
 if (typeof String.prototype.startsWith !== 'function') {
@@ -1371,7 +1371,7 @@ L.CanvasTileLayer = L.Layer.extend({
 			// the zoom level has changed
 			app.socket.sendMessage('clientzoom ' + newClientZoom);
 
-			if (!this._map._fatal && this._map._active && app.socket.connected())
+			if (!this._map._fatal && app.idleHandler._active && app.socket.connected())
 				this._clientZoom = newClientZoom;
 		}
 	},
@@ -1755,9 +1755,9 @@ L.CanvasTileLayer = L.Layer.extend({
 			var section = app.sectionContainer.getSectionWithName(L.CSections.ContentControl.name);
 			section.drawContentControl(JSON.parse(textMsg));
 		}
-		else if (textMsg.startsWith('infobar:')) {
-			obj = JSON.parse(textMsg.substring('infobar:'.length + 1));
-			this._map.fire('infobar', obj);
+		else if (textMsg.startsWith('versionbar:')) {
+			obj = JSON.parse(textMsg.substring('versionbar:'.length + 1));
+			this._map.fire('versionbar', obj);
 		}
 	},
 
@@ -2228,7 +2228,7 @@ L.CanvasTileLayer = L.Layer.extend({
 
 		this._onUpdateGraphicSelection();
 
-		if (msgData.length > 5) {
+		if (msgData && msgData.length > 5) {
 			var extraInfo = msgData[5];
 			if (extraInfo.url !== undefined) {
 				this._onEmbeddedVideoContent(JSON.stringify(extraInfo));
@@ -2294,7 +2294,6 @@ L.CanvasTileLayer = L.Layer.extend({
 			this._cellCursor = L.LatLngBounds.createDefault();
 			this._cellCursorXY = new L.Point(-1, -1);
 			this._cellCursorPixels = null;
-			app.file.calc.cellCursor.visible = false;
 			if (autofillMarkerSection)
 				autofillMarkerSection.calculatePositionViaCellCursor(null);
 			if (this._map._clip)
@@ -2319,15 +2318,11 @@ L.CanvasTileLayer = L.Layer.extend({
 			app.file.calc.cellCursor.rectangle.pixels = [Math.round(start.x), Math.round(start.y), Math.round(offsetPixels.x), Math.round(offsetPixels.y)];
 			app.file.calc.cellCursor.rectangle.twips = this._cellCursorTwips.toRectangle();
 			app.file.calc.cellCursor.visible = true;
+			app.sectionContainer.onCellAddressChanged();
 			if (autofillMarkerSection)
 				autofillMarkerSection.calculatePositionViaCellCursor([this._cellCursorPixels.getX2(), this._cellCursorPixels.getY2()]);
 
 			this._cellCursorXY = new L.Point(parseInt(strTwips[4]), parseInt(strTwips[5]));
-
-			app.file.calc.cellCursor.visible = true;
-			app.file.calc.cellCursor.rectangle.twips = this._cellCursorTwips.toRectangle();
-			app.file.calc.cellCursor.rectangle.pixels = [start.x, start.y, offsetPixels.x, offsetPixels.y];
-			app.file.calc.cellCursor.address = [parseInt(strTwips[4]), parseInt(strTwips[5])];
 		}
 
 		var horizontalDirection = 0;
@@ -2360,12 +2355,6 @@ L.CanvasTileLayer = L.Layer.extend({
 
 		// Remove input help if there is any:
 		this._removeInputHelpMarker();
-
-		var commentHasFocus = app.view.commentHasFocus;
-		// unselect if anything is selected already
-		if (!commentHasFocus && app.sectionContainer.doesSectionExist(L.CSections.CommentList.name)) {
-			app.sectionContainer.getSectionWithName(L.CSections.CommentList.name).unselect();
-		}
 	},
 
 	_removeInputHelpMarker: function() {
@@ -2390,8 +2379,9 @@ L.CanvasTileLayer = L.Layer.extend({
 	_onMousePointerMsg: function (textMsg) {
 		textMsg = textMsg.substring(14); // "mousepointer: "
 		textMsg = Cursor.getCustomCursor(textMsg) || textMsg;
-		if (this._map._container.style.cursor !== textMsg) {
-			this._map._container.style.cursor = textMsg;
+		var mapPane = $('.leaflet-pane.leaflet-map-pane');
+		if (mapPane.css('cursor') !== textMsg) {
+			mapPane.css('cursor', textMsg);
 		}
 	},
 
@@ -2402,58 +2392,62 @@ L.CanvasTileLayer = L.Layer.extend({
 	},
 
 	_showURLPopUp: function(position, url) {
-		// # for internal links
-		if (!url.startsWith('#')) {
-			var link = L.DomUtil.createWithId('a', 'hyperlink-pop-up');
-			link.innerText = url;
-			var copyBtn = L.DomUtil.createWithId('div', 'hyperlink-pop-up-copy');
-			L.DomUtil.addClass(copyBtn, 'hyperlink-popup-btn');
-			copyBtn.setAttribute('title', _('Copy link location'));
-			var imgCopyBtn = L.DomUtil.create('img', 'hyperlink-pop-up-copyimg', copyBtn);
-			imgCopyBtn.setAttribute('src', L.LOUtil.getImageURL('lc_copyhyperlinklocation.svg'));
-			imgCopyBtn.setAttribute('width', 18);
-			imgCopyBtn.setAttribute('height', 18);
-			imgCopyBtn.setAttribute('style', 'padding: 4px');
-			var editBtn = L.DomUtil.createWithId('div', 'hyperlink-pop-up-edit');
-			L.DomUtil.addClass(editBtn, 'hyperlink-popup-btn');
-			editBtn.setAttribute('title', _('Edit link'));
-			var imgEditBtn = L.DomUtil.create('img', 'hyperlink-pop-up-editimg', editBtn);
-			imgEditBtn.setAttribute('src', L.LOUtil.getImageURL('lc_edithyperlink.svg'));
-			imgEditBtn.setAttribute('width', 18);
-			imgEditBtn.setAttribute('height', 18);
-			imgEditBtn.setAttribute('style', 'padding: 4px');
-			var removeBtn = L.DomUtil.createWithId('div', 'hyperlink-pop-up-remove');
-			L.DomUtil.addClass(removeBtn, 'hyperlink-popup-btn');
-			removeBtn.setAttribute('title', _('Remove link'));
-			var imgRemoveBtn = L.DomUtil.create('img', 'hyperlink-pop-up-removeimg', removeBtn);
-			imgRemoveBtn.setAttribute('src', L.LOUtil.getImageURL('lc_removehyperlink.svg'));
-			imgRemoveBtn.setAttribute('width', 18);
-			imgRemoveBtn.setAttribute('height', 18);
-			imgRemoveBtn.setAttribute('style', 'padding: 4px');
-			var linkOuterHtml = link.outerHTML + copyBtn.outerHTML + editBtn.outerHTML + removeBtn.outerHTML;
-			this._map.hyperlinkPopup = new L.Popup({className: 'hyperlink-popup', closeButton: false, closeOnClick: false, autoPan: false})
-				.setContent(linkOuterHtml)
-				.setLatLng(position)
-				.openOn(this._map);
-			document.getElementById('hyperlink-pop-up').title = url;
-			var offsetDiffTop = $('.hyperlink-popup').offset().top - $('#map').offset().top;
-			var offsetDiffLeft = $('.hyperlink-popup').offset().left - $('#map').offset().left;
-			if (offsetDiffTop < 10) this._movePopUpBelow();
-			if (offsetDiffLeft < 10) this._movePopUpRight();
-			var map_ = this._map;
-			this._setupClickFuncForId('hyperlink-pop-up', function() {
+		var parent = L.DomUtil.create('div');
+		L.DomUtil.createWithId('div', 'hyperlink-pop-up-preview', parent);
+		var link = L.DomUtil.createWithId('a', 'hyperlink-pop-up', parent);
+		link.innerText = url;
+		var copyBtn = L.DomUtil.createWithId('div', 'hyperlink-pop-up-copy', parent);
+		L.DomUtil.addClass(copyBtn, 'hyperlink-popup-btn');
+		copyBtn.setAttribute('title', _('Copy link location'));
+		var imgCopyBtn = L.DomUtil.create('img', 'hyperlink-pop-up-copyimg', copyBtn);
+		imgCopyBtn.setAttribute('src', L.LOUtil.getImageURL('lc_copyhyperlinklocation.svg'));
+		imgCopyBtn.setAttribute('width', 18);
+		imgCopyBtn.setAttribute('height', 18);
+		imgCopyBtn.setAttribute('style', 'padding: 4px');
+		var editBtn = L.DomUtil.createWithId('div', 'hyperlink-pop-up-edit', parent);
+		L.DomUtil.addClass(editBtn, 'hyperlink-popup-btn');
+		editBtn.setAttribute('title', _('Edit link'));
+		var imgEditBtn = L.DomUtil.create('img', 'hyperlink-pop-up-editimg', editBtn);
+		imgEditBtn.setAttribute('src', L.LOUtil.getImageURL('lc_edithyperlink.svg'));
+		imgEditBtn.setAttribute('width', 18);
+		imgEditBtn.setAttribute('height', 18);
+		imgEditBtn.setAttribute('style', 'padding: 4px');
+		var removeBtn = L.DomUtil.createWithId('div', 'hyperlink-pop-up-remove', parent);
+		L.DomUtil.addClass(removeBtn, 'hyperlink-popup-btn');
+		removeBtn.setAttribute('title', _('Remove link'));
+		var imgRemoveBtn = L.DomUtil.create('img', 'hyperlink-pop-up-removeimg', removeBtn);
+		imgRemoveBtn.setAttribute('src', L.LOUtil.getImageURL('lc_removehyperlink.svg'));
+		imgRemoveBtn.setAttribute('width', 18);
+		imgRemoveBtn.setAttribute('height', 18);
+		imgRemoveBtn.setAttribute('style', 'padding: 4px');
+		this._map.hyperlinkPopup = new L.Popup({className: 'hyperlink-popup', closeButton: false, closeOnClick: false, autoPan: false})
+			.setHTMLContent(parent)
+			.setLatLng(position)
+			.openOn(this._map);
+		document.getElementById('hyperlink-pop-up').title = url;
+		var offsetDiffTop = $('.hyperlink-popup').offset().top - $('#map').offset().top;
+		var offsetDiffLeft = $('.hyperlink-popup').offset().left - $('#map').offset().left;
+		if (offsetDiffTop < 10) this._movePopUpBelow();
+		if (offsetDiffLeft < 10) this._movePopUpRight();
+		var map_ = this._map;
+		this._setupClickFuncForId('hyperlink-pop-up', function() {
+			if (!url.startsWith('#'))
 				map_.fire('warn', {url: url, map: map_, cmd: 'openlink'});
-			});
-			this._setupClickFuncForId('hyperlink-pop-up-copy', function () {
-				map_.sendUnoCommand('.uno:CopyHyperlinkLocation');
-			});
-			this._setupClickFuncForId('hyperlink-pop-up-edit', function () {
-				map_.sendUnoCommand('.uno:EditHyperlink');
-			});
-			this._setupClickFuncForId('hyperlink-pop-up-remove', function () {
-				map_.sendUnoCommand('.uno:RemoveHyperlink');
-			});
-		}
+			else
+				map_.sendUnoCommand('.uno:JumpToMark?Bookmark:string=' + url.substring(1));
+		});
+		this._setupClickFuncForId('hyperlink-pop-up-copy', function () {
+			map_.sendUnoCommand('.uno:CopyHyperlinkLocation');
+		});
+		this._setupClickFuncForId('hyperlink-pop-up-edit', function () {
+			map_.sendUnoCommand('.uno:EditHyperlink');
+		});
+		this._setupClickFuncForId('hyperlink-pop-up-remove', function () {
+			map_.sendUnoCommand('.uno:RemoveHyperlink');
+		});
+
+		if (this._map['wopi'].EnableRemoteLinkPicker)
+			this._map.fire('postMessage', { msgId: 'Action_GetLinkPreview', args: { url: url } });
 	},
 
 	_movePopUpBelow: function() {
@@ -2503,6 +2497,15 @@ L.CanvasTileLayer = L.Layer.extend({
 			this._twipsToLatLng(recCursor.getTopLeft(), this._map.getZoom()),
 			this._twipsToLatLng(recCursor.getBottomRight(), this._map.getZoom()));
 		this._cursorCorePixels = this._twipsToCorePixelsBounds(recCursor);
+		if (this._docType === 'text') {
+			app.file.writer.cursorPosition = [
+				Math.round(this._cursorCorePixels.getTopLeft().x), // x
+				Math.round(this._cursorCorePixels.getTopLeft().y), // y
+				Math.round(this._cursorCorePixels.getSize().x), // width
+				Math.round(this._cursorCorePixels.getSize().y) // height
+			];
+			app.sectionContainer.onCursorPositionChanged();
+		}
 
 		var cursorPos = this._visibleCursor.getNorthWest();
 		var docLayer = this._map._docLayer;
@@ -2699,11 +2702,7 @@ L.CanvasTileLayer = L.Layer.extend({
 					var newCenter = mapBounds.getCenter();
 					newCenter.lat += scrollX;
 					newCenter.lat += scrollY;
-					var center = this._map.project(newCenter);
-					center = center.subtract(this._map.getSize().divideBy(2));
-					center.x = Math.round(center.x < 0 ? 0 : center.x);
-					center.y = Math.round(center.y < 0 ? 0 : center.y);
-					this._map.fire('scrollto', {x: center.x, y: center.y});
+					this.scrollToPos(newCenter);
 				}
 			}
 
@@ -3228,14 +3227,10 @@ L.CanvasTileLayer = L.Layer.extend({
 					var newCenter = mapBounds.getCenter();
 					newCenter.lng += scrollX;
 					newCenter.lat += scrollY;
-					var center = this._map.project(newCenter);
-					center = center.subtract(this._map.getSize().divideBy(2));
-					center.x = Math.round(center.x < 0 ? 0 : center.x);
-					center.y = Math.round(center.y < 0 ? 0 : center.y);
 					if (!this._map.wholeColumnSelected && !this._map.wholeRowSelected) {
 						var address = document.getElementById('addressInput').value;
 						if (!this._isWholeColumnSelected(address) && !this._isWholeRowSelected(address))
-							this._map.fire('scrollto', {x: center.x, y: center.y});
+							this.scrollToPos(newCenter);
 					}
 				}
 			}
@@ -3623,9 +3618,33 @@ L.CanvasTileLayer = L.Layer.extend({
 		}
 	},
 
+	goToTarget: function(target) {
+		var command = {
+			'Name': {
+				type: 'string',
+				value: 'URL'
+			},
+			'URL': {
+				type: 'string',
+				value: '#' + target
+			}
+		};
+
+		this._map.sendUnoCommand('.uno:OpenHyperlink', command);
+	},
+
 	_allowViewJump: function() {
 		return (!this._map._clip || this._map._clip._selectionType !== 'complex') &&
 		!this._referenceMarkerStart.isDragged && !this._referenceMarkerEnd.isDragged;
+	},
+
+	// Scrolls the view to selected position
+	scrollToPos: function(pos) {
+		var center = this._map.project(pos);
+		center = center.subtract(this._map.getSize().divideBy(2));
+		center.x = Math.round(center.x < 0 ? 0 : center.x);
+		center.y = Math.round(center.y < 0 ? 0 : center.y);
+		this._map.fire('scrollto', {x: center.x, y: center.y});
 	},
 
 	// Update cursor layer (blinking cursor).
@@ -3651,18 +3670,12 @@ L.CanvasTileLayer = L.Layer.extend({
 		&& this._allowViewJump()) {
 
 			var paneRectsInLatLng = this.getPaneLatLngRectangles();
-
 			if (!this._visibleCursor.isInAny(paneRectsInLatLng)) {
-				var center = this._map.project(cursorPos);
-				center = center.subtract(this._map.getSize().divideBy(2));
-				center.x = Math.round(center.x < 0 ? 0 : center.x);
-				center.y = Math.round(center.y < 0 ? 0 : center.y);
-
 				if (!(this._selectionHandles.start && this._selectionHandles.start.isDragged) &&
 				    !(this._selectionHandles.end && this._selectionHandles.end.isDragged) &&
 				    !(docLayer._followEditor || docLayer._followUser) &&
 				    !this._map.calcInputBarHasFocus()) {
-					this._map.fire('scrollto', {x: center.x, y: center.y});
+					this.scrollToPos(cursorPos);
 				}
 			}
 		}
@@ -3750,9 +3763,16 @@ L.CanvasTileLayer = L.Layer.extend({
 		} else {
 			this._map._textInput.hideCursor();
 			// Maintain input if a dialog or search-box has the focus.
-			if (this._map.editorHasFocus() && !isAnyVexDialogActive() && !this._map.isSearching()
+			if (this._map.editorHasFocus() && !this._map.uiManager.isAnyDialogOpen() && !this._map.isSearching()
 				&& !this._isAnyInputFocused())
 				this._map.focus(false);
+		}
+
+		// when first time we updated the cursor - document is loaded
+		// let's move cursor to the target
+		if (this._map.options.docTarget !== '') {
+			this.goToTarget(this._map.options.docTarget);
+			this._map.options.docTarget = '';
 		}
 	},
 
@@ -3827,12 +3847,7 @@ L.CanvasTileLayer = L.Layer.extend({
 		if (this._viewCursors[viewId] && this._viewCursors[viewId].visible && !this._isEmptyRectangle(this._viewCursors[viewId].bounds)) {
 			if (!this._map.getBounds().contains(this._viewCursors[viewId].bounds)) {
 				var viewCursorPos = this._viewCursors[viewId].bounds.getNorthWest();
-				var center = this._map.project(viewCursorPos);
-				center = center.subtract(this._map.getSize().divideBy(2));
-				center.x = Math.round(center.x < 0 ? 0 : center.x);
-				center.y = Math.round(center.y < 0 ? 0 : center.y);
-
-				this._map.fire('scrollto', {x: center.x, y: center.y});
+				this.scrollToPos(viewCursorPos);
 			}
 
 			this._viewCursors[viewId].marker.showCursorHeader();
@@ -4368,11 +4383,7 @@ L.CanvasTileLayer = L.Layer.extend({
 					var newCenter = mapBounds.getCenter();
 					newCenter.lng += scroll.lng;
 					newCenter.lat += scroll.lat;
-					var center = this._map.project(newCenter);
-					center = center.subtract(this._map.getSize().divideBy(2));
-					center.x = Math.round(center.x < 0 ? 0 : center.x);
-					center.y = Math.round(center.y < 0 ? 0 : center.y);
-					this._map.fire('scrollto', {x: center.x, y: center.y});
+					this.scrollToPos(newCenter);
 				}
 				this._prevCellCursorXY = this._cellCursorXY;
 			}
@@ -4429,7 +4440,11 @@ L.CanvasTileLayer = L.Layer.extend({
 			var formula = this._lastFormula;
 			var targetURL = formula.substring(11, formula.length - 1).split(',')[0];
 			targetURL = targetURL.split('"').join('');
-			targetURL = this._map.makeURLFromStr(targetURL);
+			if (targetURL.startsWith('#')) {
+				targetURL = targetURL.split(';')[0];
+			} else {
+				targetURL = this._map.makeURLFromStr(targetURL);
+			}
 
 			this._closeURLPopUp();
 			if (targetURL) {
@@ -5367,7 +5382,9 @@ L.CanvasTileLayer = L.Layer.extend({
 
 			var hasMobileWizardOpened = this._map.uiManager.mobileWizard ? this._map.uiManager.mobileWizard.isOpen() : false;
 			var hasIframeModalOpened = $('.iframe-dialog-modal').is(':visible');
-			if (window.mode.isMobile() && !hasMobileWizardOpened && !hasIframeModalOpened) {
+			// when integrator has opened dialog in parent frame (eg. save as) we shouldn't steal the focus
+			var focusedUI = document.activeElement === document.body;
+			if (window.mode.isMobile() && !hasMobileWizardOpened && !hasIframeModalOpened && !focusedUI) {
 				if (heightIncreased) {
 					// if the keyboard is hidden - be sure we setup correct state in TextInput
 					this._map.setAcceptInput(false);
@@ -5481,7 +5498,7 @@ L.CanvasTileLayer = L.Layer.extend({
 		map.on('statusindicator',
 			function (e) {
 				if (e.statusType === 'alltilesloaded' && this._docType === 'spreadsheet') {
-					if (!isAnyVexDialogActive())
+					if (!this._map.uiManager.isAnyDialogOpen())
 						this._onCellCursorShift(true);
 				}
 			},
@@ -6183,7 +6200,7 @@ L.CanvasTileLayer = L.Layer.extend({
 		if (this._clientVisibleArea !== newClientVisibleArea || forceUpdate) {
 			// Visible area is dirty, update it on the server
 			app.socket.sendMessage(newClientVisibleArea);
-			if (!this._map._fatal && this._map._active && app.socket.connected())
+			if (!this._map._fatal && app.idleHandler._active && app.socket.connected())
 				this._clientVisibleArea = newClientVisibleArea;
 			if (this._debug) {
 				this._debugInfo.clearLayers();

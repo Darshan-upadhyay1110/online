@@ -447,8 +447,16 @@ L.Control.MobileWizardWindow = L.Control.extend({
 					} else {
 						this.backButton.hide();
 						popupContainer.empty();
-						if (!this._builder)
-							this._builder = L.control.mobileWizardBuilder({windowId: data.id, mobileWizard: this, map: this.map, cssClass: 'mobile-wizard'});
+						if (!this._builder) {
+							this._builder = L.control.mobileWizardBuilder(
+								{
+									windowId: data.id,
+									mobileWizard: this,
+									map: this.map,
+									cssClass: 'mobile-wizard',
+									useSetTabs: true
+								});
+						}
 						this._builder.build(popupContainer.get(0), [data]);
 					}
 
@@ -461,8 +469,12 @@ L.Control.MobileWizardWindow = L.Control.extend({
 					// normal popup - continue to open mobile wizard
 					var overlay = L.DomUtil.create('div', 'mobile-wizard jsdialog-overlay ' + (data.cancellable ? 'cancellable' : ''), document.body);
 					var that = this;
-					if (data.cancellable)
-						overlay.onclick = function () { that.parent.removeWindow(that); };
+					if (data.cancellable) {
+						overlay.onclick = function () {
+							that.parent.removeWindow(that);
+							that._builder.callback('popover', 'close', {id: '__POPOVER__'}, null, that._builder);
+						};
+					}
 				}
 			}
 
@@ -486,8 +498,17 @@ L.Control.MobileWizardWindow = L.Control.extend({
 				history.pushState({context: 'mobile-wizard', level: 0}, 'mobile-wizard-level-0');
 			}
 
-			if (!this._builder)
-				this._builder = L.control.mobileWizardBuilder({windowId: data.id, mobileWizard: this, map: this.map, cssClass: 'mobile-wizard', callback: callback});
+			if (!this._builder) {
+				this._builder = L.control.mobileWizardBuilder(
+					{
+						windowId: data.id,
+						mobileWizard: this,
+						map: this.map,
+						cssClass: 'mobile-wizard',
+						callback: callback,
+						useSetTabs: true
+					});
+			}
 			this._builder.build(this.content, [data]);
 			if (window.ThisIsTheAndroidApp)
 				window.postMobileMessage('hideProgressbar');
@@ -509,6 +530,9 @@ L.Control.MobileWizardWindow = L.Control.extend({
 				document.getElementById('mobile-wizard').style.height = '100vh';
 				$('#mobile-wizard').css('top', $('#document-container').css('top'));
 				this.isFunctionMenu = true;
+			}
+			else if (data.id === 'modal-dialog-about-dialog-box' || data.id === 'modal-dialog-unlock-features-popup') {
+				isPopup = true;
 			} else {
 				document.getElementById('mobile-wizard').style.height = this.options.maxHeight;
 				$('#mobile-wizard').css('top', '');

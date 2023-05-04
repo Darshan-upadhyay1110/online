@@ -10,6 +10,7 @@ L.Control.UIManager = L.Control.extend({
 	blockedUI: false,
 	busyPopupTimer: null,
 	customButtons: [], // added by WOPI InsertButton
+	modalIdPretext: 'modal-dialog-',
 
 	onAdd: function (map) {
 		this.map = map;
@@ -26,6 +27,7 @@ L.Control.UIManager = L.Control.extend({
 		this.map.toolbarUpTemplate = $('#toolbar-up')[0].cloneNode(true);
 		this.map.mainMenuTemplate = $('#main-menu')[0].cloneNode(true);
 
+		map.on('infobar', this.showInfoBar, this);
 		map.on('updatepermission', this.onUpdatePermission, this);
 
 		if (window.mode.isMobile()) {
@@ -68,9 +70,62 @@ L.Control.UIManager = L.Control.extend({
 			|| forceCompact === false;
 	},
 
+	// Dark mode toggle
+
+	loadLightMode: function() {
+		document.documentElement.setAttribute('data-theme','light');
+		this.map.fire('darkmodechanged');
+	},
+
+	loadDarkMode: function() {
+		document.documentElement.setAttribute('data-theme','dark');
+		this.map.fire('darkmodechanged');
+	},
+
+	getDarkModeState: function() {
+		return this.getSavedStateOrDefault('darkTheme', false);
+	},
+
+	toggleDarkMode: function() {
+		// get the initial mode
+		var selectedMode = this.getDarkModeState();
+		// swap them by invoking the appropriate load function and saving the state
+		if (selectedMode) {
+			this.setSavedState('darkTheme',false);
+			this.loadLightMode();
+			var cmd = {
+				'NewTheme': { 'type': 'string', 'value': 'COLOR_SCHEME_LIBREOFFICE_AUTOMATIC' }
+			};
+			app.socket.sendMessage('uno .uno:ChangeTheme ' + JSON.stringify(cmd));
+		}
+		else {
+			this.setSavedState('darkTheme',true);
+			this.loadDarkMode();
+			var cmd = {
+				'NewTheme': { 'type': 'string', 'value': 'COLOR_SCHEME_LIBREOFFICE_DARK' }
+			};
+			app.socket.sendMessage('uno .uno:ChangeTheme ' + JSON.stringify(cmd));
+		}
+	},
+
+	initDarkModeFromSettings: function() {
+		var selectedMode = this.getDarkModeState();
+		if (selectedMode) {
+			this.loadDarkMode();
+			var cmd = {
+				'NewTheme': { 'type': 'string', 'value': 'COLOR_SCHEME_LIBREOFFICE_DARK' }
+			};
+			app.socket.sendMessage('uno .uno:ChangeTheme ' + JSON.stringify(cmd));
+		}
+		else {
+			this.loadLightMode();
+		}
+	},
+
 	initializeBasicUI: function() {
 		var enableNotebookbar = this.shouldUseNotebookbarMode();
 		var that = this;
+
 
 		if (window.mode.isMobile() || !enableNotebookbar) {
 			var menubar = L.control.menubar();
@@ -114,7 +169,6 @@ L.Control.UIManager = L.Control.extend({
 		this.map.dialog = L.control.lokDialog();
 		this.map.addControl(this.map.dialog);
 		this.map.addControl(L.control.contextMenu());
-		this.map.addControl(L.control.infobar());
 		this.map.userList = L.control.userList();
 		this.map.addControl(this.map.userList);
 
@@ -136,8 +190,10 @@ L.Control.UIManager = L.Control.extend({
 						}
 					]
 				};
-				if (app.socket)
-					app.socket._onMessage({textMsg: 'jsdialog: ' + JSON.stringify(json)});
+				if (app.socket) {
+					var builderCallback = function() { /* Do nothing. */ };
+					app.socket._onMessage({textMsg: 'jsdialog: ' + JSON.stringify(json), callback: builderCallback});
+				}
 			}, 700);
 		};
 
@@ -183,6 +239,8 @@ L.Control.UIManager = L.Control.extend({
 			this.createNotebookbarControl(docType);
 			// makeSpaceForNotebookbar call in onUpdatePermission
 		}
+
+		this.initDarkModeFromSettings();
 
 		if (docType === 'spreadsheet') {
 			this.map.addControl(L.control.sheetsBar({shownavigation: isDesktop || window.mode.isTablet()}));
@@ -403,6 +461,9 @@ L.Control.UIManager = L.Control.extend({
 
 		if (typeof window.initializedUI === 'function')
 			window.initializedUI();
+		this.map.fire('darkmodechanged');
+		this.map.fire('rulerchanged');
+		this.map.fire('statusbarchanged');
 	},
 
 	// UI modification
@@ -414,7 +475,8 @@ L.Control.UIManager = L.Control.extend({
 				var style = $('html > head > style');
 				if (style.length == 0)
 					$('html > head').append('<style/>');
-				$('html > head > style').append('.w2ui-icon.' + button.id + '{background: url(' + button.imgurl + ') no-repeat center !important; }');
+				$('html > head > style').append('.w2ui-icon.' + encodeURIComponent(button.id) +
+					'{background: url("' + encodeURIComponent(button.imgurl) + '") no-repeat center !important; }');
 
 				// Position: Either specified by the caller, or defaulting to first position (before save)
 				var insertBefore = button.insertBefore || 'save';
@@ -425,7 +487,7 @@ L.Control.UIManager = L.Control.extend({
 						uno: button.unoCommand,
 						id: button.id,
 						img: button.id,
-						hint: _(button.hint), /* "Try" to localize ! */
+						hint: _(button.hint.replaceAll('\"', '&quot;')), /* "Try" to localize ! */
 						/* Notify the host back when button is clicked (only when unoCommand is not set) */
 						postmessage: !Object.prototype.hasOwnProperty.call(button, 'unoCommand')
 					}
@@ -695,7 +757,7 @@ L.Control.UIManager = L.Control.extend({
 		var userPrivateInfo = this.map._docLayer ? this.map._viewInfo[this.map._docLayer._viewId].userprivateinfo : null;
 		if (userPrivateInfo) {
 			var apiKey = userPrivateInfo.ZoteroAPIKey;
-			if (apiKey) {
+			if (apiKey !== undefined) {
 				this.map.zotero = L.control.zotero(this.map);
 				this.map.zotero.apiKey = apiKey;
 				this.map.addControl(this.map.zotero);
@@ -796,9 +858,14 @@ L.Control.UIManager = L.Control.extend({
 	/// shows modal dialog
 	/// json - JSON for building the dialog
 	/// callbacks - array of { id: widgetId, type: eventType, func: functionToCall }
-	showModal: function(json, callbacks) {
+	showModal: function(json, callbacks, cancelButtonId) {
+		var that = this;
 		var builderCallback = function(objectType, eventType, object, data) {
 			window.app.console.debug('modal action: \'' + objectType + '\' id:\'' + object.id + '\' event: \'' + eventType + '\' state: \'' + data + '\'');
+
+			// default close methods
+			callbacks.push({id: (cancelButtonId ? cancelButtonId: 'response-cancel'), func: function() { that.closeModal(json.id); }});
+			callbacks.push({id: '__POPOVER__', func: function() { that.closeModal(json.id); }});
 
 			for (var i in callbacks) {
 				var callback = callbacks[i];
@@ -811,17 +878,43 @@ L.Control.UIManager = L.Control.extend({
 		app.socket._onMessage({textMsg: 'jsdialog: ' + JSON.stringify(json), callback: builderCallback});
 	},
 
-	_modalDialogJSON: function(id, title, cancellable, widgets) {
-		var dialogId = 'modal-dialog-' + id;
+	closeModal: function(dialogId) {
+		var closeMessage = { id: dialogId, jsontype: 'dialog', type: 'modalpopup', action: 'close' };
+		app.socket._onMessage({ textMsg: 'jsdialog: ' + JSON.stringify(closeMessage) });
+	},
+
+	closeAll: function() {
+		if (this.map.jsdialog)
+			this.map.jsdialog.closeAll();
+		else
+			this.mobileWizard._closeWizard();
+	},
+
+	isAnyDialogOpen: function() {
+		if (this.map.jsdialog)
+			return this.map.jsdialog.hasDialogOpened();
+		else
+			return this.mobileWizard.isOpen();
+	},
+
+	/// Returns generated (or to be generated) id for the modal container.
+	generateModalId: function(givenId) {
+		return this.modalIdPretext + givenId;
+	},
+
+	_modalDialogJSON: function(id, title, cancellable, widgets, focusId) {
+		var dialogId = this.generateModalId(id);
+		focusId = focusId ? focusId : 'response';
 		return {
 			id: dialogId,
 			dialogid: id,
 			type: 'modalpopup',
 			title: title,
 			hasClose: true,
+			hasOverlay: true,
 			cancellable: cancellable,
 			jsontype: 'dialog',
-			'init_focus_id': 'response',
+			'init_focus_id': focusId,
 			children: [
 				{
 					id: 'info-modal-container',
@@ -841,8 +934,11 @@ L.Control.UIManager = L.Control.extend({
 	/// buttonText - text inside button
 	/// callback - callback on button press
 	/// withCancel - specifies if needs cancal button also
-	showInfoModal: function(id, title, message1, message2, buttonText, callback, withCancel) {
-		var dialogId = 'modal-dialog-' + id;
+	showInfoModal: function(id, title, message1, message2, buttonText, callback, withCancel, focusId) {
+		var dialogId = this.generateModalId(id);
+		var responseButtonId = id + '-response';
+		var cancelButtonId = id + '-cancel';
+
 		var json = this._modalDialogJSON(id, title, true, [
 			{
 				id: 'info-modal-tile-m',
@@ -867,32 +963,80 @@ L.Control.UIManager = L.Control.extend({
 				enabled: true,
 				children: [
 					withCancel ? {
-						id: 'cancel',
+						id: cancelButtonId,
 						type: 'pushbutton',
 						text: _('Cancel')
 					} : { type: 'container' },
 					{
-						id: 'response',
+						id: responseButtonId,
 						type: 'pushbutton',
 						text: buttonText,
 						'has_default': true,
+						hidden: buttonText ? false: true // Hide if no text is given. So we can use one modal type for various purposes.
 					}
 				],
 				vertical: false,
 				layoutstyle: 'end'
 			},
-		]);
+		], focusId);
 
-		var closeFunc = function() {
-			var closeMessage = { id: dialogId, jsontype: 'dialog', type: 'modalpopup', action: 'close' };
-			app.socket._onMessage({ textMsg: 'jsdialog: ' + JSON.stringify(closeMessage) });
-		};
-
+		var that = this;
 		this.showModal(json, [
-			{id: 'response', func: function() { if (typeof callback === 'function') callback(); closeFunc(); }},
-			{id: 'cancel', func: function() { closeFunc(); }},
-			{id: '__POPOVER__', func: function() { closeFunc(); }}
+			{id: responseButtonId, func: function() {
+				if (typeof callback === 'function')
+					callback();
+				that.closeModal(dialogId);
+			}}
+		], cancelButtonId);
+	},
+
+	/// buttonObjectList: [{id: button's id, text: button's text, ..other properties if needed}, ...]
+	/// callbackList: [{id: button's id, func_: function}, ...]
+	showModalWithCustomButtons: function(id, title, message, cancellable, buttonObjectList, callbackList) {
+		var dialogId = this.generateModalId(id);
+
+		for (var i = 0; i < buttonObjectList.length; i++)
+			buttonObjectList[i].type = 'pushbutton';
+
+		var json = this._modalDialogJSON(id, title, !!cancellable, [
+			{
+				id: 'info-modal-tile-m',
+				type: 'fixedtext',
+				text: title,
+				hidden: !window.mode.isMobile()
+			},
+			{
+				id: 'info-modal-label1',
+				type: 'fixedtext',
+				text: message
+			},
+			{
+				id: '',
+				type: 'buttonbox',
+				text: '',
+				enabled: true,
+				children: buttonObjectList,
+				vertical: false,
+				layoutstyle: 'end'
+			},
 		]);
+
+		buttonObjectList.forEach(function(button) {
+			callbackList.forEach(function(callback) {
+				if (button.id === callback.id) {
+					if (typeof callback.func_ === 'function') {
+						callback.func = function() {
+							callback.func_();
+							this.closeModal(dialogId);
+						}.bind(this);
+					}
+					else
+						callback.func = function() { this.closeModal(dialogId); }.bind(this);
+				}
+			}.bind(this));
+		}.bind(this));
+
+		this.showModal(json, callbackList);
 	},
 
 	/// shows simple input modal (message + input + (cancel + ok) button)
@@ -902,18 +1046,21 @@ L.Control.UIManager = L.Control.extend({
 	/// defaultValue - default value of an input
 	/// buttonText - text inside OK button
 	/// callback - callback on button press
-	showInputModal: function(id, title, message, defaultValue, buttonText, callback) {
-		var dialogId = 'modal-dialog-' + id;
+	showInputModal: function(id, title, message, defaultValue, buttonText, callback, passwordInput) {
+		var dialogId = this.generateModalId(id);
 		var json = this._modalDialogJSON(id, title, !window.mode.isDesktop(), [
 			{
 				id: 'info-modal-label1',
 				type: 'fixedtext',
-				text: message
+				text: message,
+				labelFor: 'input-modal-input',
 			},
 			{
 				id: 'input-modal-input',
 				type: 'edit',
-				text: defaultValue
+				password: !!passwordInput,
+				text: defaultValue,
+				labelledBy: 'info-modal-label1'
 			},
 			{
 				id: '',
@@ -938,21 +1085,108 @@ L.Control.UIManager = L.Control.extend({
 			},
 		]);
 
-		var closeFunc = function() {
-			var closeMessage = { id: dialogId, jsontype: 'dialog', type: 'modalpopup', action: 'close' };
-			app.socket._onMessage({ textMsg: 'jsdialog: ' + JSON.stringify(closeMessage) });
-		};
-
+		var that = this;
 		this.showModal(json, [
 			{id: 'response-ok', func: function() {
 				if (typeof callback === 'function') {
 					var input = document.getElementById('input-modal-input');
 					callback(input.value);
 				}
-				closeFunc();
-			}},
-			{id: 'response-cancel', func: function() { closeFunc(); }},
-			{id: '__POPOVER__', func: function() { closeFunc(); }}
+				that.closeModal(dialogId);
+			}}
+		]);
+	},
+
+	/// Shows an info bar at the bottom right of the view.
+	/// This is called by map.fire('infobar', {data}).
+	showInfoBar: function(e) {
+
+		var message = e.msg;
+		var link = e.action;
+		var linkText = e.actionLabel;
+
+		var id = 'infobar' + Math.round(Math.random() * 10);
+		var dialogId = this.generateModalId(id);
+		var json = this._modalDialogJSON(id, ' ', !window.mode.isDesktop(), [
+			{
+				id: dialogId + '-text',
+				type: 'fixedtext',
+				text: message
+			},
+		]);
+
+		this.showModal(json);
+
+		if (!window.mode.isMobile()) {
+			document.getElementById(dialogId).style.marginRight = '0';
+			document.getElementById(dialogId).style.marginBottom = '0';
+		}
+
+		if (link && linkText) {
+			document.getElementById(dialogId + '-text').style.textDecoration = 'underline';
+			document.getElementById(dialogId + '-text').onclick = function() {
+				var win = window.open(link, '_blank');
+				win.focus();
+			};
+		}
+	},
+
+	// Opens a yesno modal with configurable buttons.
+	showYesNoButton: function(id, title, message, yesButtonText, noButtonText, yesFunction, noFunction, cancellable) {
+		var dialogId = this.generateModalId(id);
+
+		var json = this._modalDialogJSON(id, title, cancellable, [
+			{
+				id:  dialogId + '-title',
+				type: 'fixedtext',
+				text: title,
+				hidden: !window.mode.isMobile()
+			},
+			{
+				id: dialogId + '-label',
+				type: 'fixedtext',
+				text: message
+			},
+			{
+				id: '',
+				type: 'buttonbox',
+				text: '',
+				enabled: true,
+				children: [
+					noButtonText ? {
+						id: dialogId + '-nobutton',
+						type: 'pushbutton',
+						text: noButtonText
+					} : { type: 'container' },
+					{
+						id: dialogId + '-yesbutton',
+						type: 'pushbutton',
+						text: yesButtonText,
+					}
+				],
+				vertical: false,
+				layoutstyle: 'end'
+			},
+		]);
+
+		this.showModal(json,
+		[
+			{
+				id: dialogId + '-nobutton',
+				func: function() {
+					if (typeof noFunction === 'function')
+						noFunction();
+					this.closeModal(dialogId);
+				}.bind(this)
+			},
+			{
+				id: dialogId + '-yesbutton',
+				func: function() {
+					if (typeof yesFunction === 'function')
+						yesFunction();
+					this.closeModal(dialogId);
+				}.bind(this)
+			}
 		]);
 	},
 
@@ -962,8 +1196,8 @@ L.Control.UIManager = L.Control.extend({
 	/// message - message
 	/// buttonText - text inside OK button
 	/// callback - callback on button press
-	showConfirmModal: function(id, title, message, buttonText, callback) {
-		var dialogId = 'modal-dialog-' + id;
+	showConfirmModal: function(id, title, message, buttonText, callback, hideCancelButton) {
+		var dialogId = this.generateModalId(id);
 		var json = this._modalDialogJSON(id, title, !window.mode.isDesktop(), [
 			{
 				id: 'info-modal-label1',
@@ -980,6 +1214,7 @@ L.Control.UIManager = L.Control.extend({
 						id: 'response-cancel',
 						type: 'pushbutton',
 						text: _('Cancel'),
+						hidden: hideCancelButton === true ? true: false
 					},
 					{
 						id: 'response-ok',
@@ -993,20 +1228,14 @@ L.Control.UIManager = L.Control.extend({
 			},
 		]);
 
-		var closeFunc = function() {
-			var closeMessage = { id: dialogId, jsontype: 'dialog', type: 'modalpopup', action: 'close' };
-			app.socket._onMessage({ textMsg: 'jsdialog: ' + JSON.stringify(closeMessage) });
-		};
-
+		var that = this;
 		this.showModal(json, [
 			{id: 'response-ok', func: function() {
 				if (typeof callback === 'function') {
 					callback();
 				}
-				closeFunc();
-			}},
-			{id: 'response-cancel', func: function() { closeFunc(); }},
-			{id: '__POPOVER__', func: function() { closeFunc(); }}
+				that.closeModal(dialogId);
+			}}
 		]);
 	},
 

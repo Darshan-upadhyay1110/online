@@ -357,7 +357,7 @@ static void cleanupChildren()
     while (i-- > 0)
     {
         const std::string path = cleanupJailPaths[i];
-        JailUtil::removeJail(path);
+        JailUtil::tryRemoveJail(path);
         const FileUtil::Stat st(path);
         if (st.good() && st.isDirectory())
             LOG_DBG("Could not remove jail path [" << path << "]. Will retry later.");
@@ -382,6 +382,7 @@ static int createLibreOfficeKit(const std::string& childRoot,
     ++spareKitId;
     LOG_DBG("Forking a coolkit process with jailId: " << jailId << " as spare coolkit #"
                                                       << spareKitId << '.');
+    const auto startForkingTime = std::chrono::steady_clock::now();
 
     const pid_t pid = fork();
     if (!pid)
@@ -427,6 +428,10 @@ static int createLibreOfficeKit(const std::string& childRoot,
         UnitKit::get().launchedKit(pid);
 #endif
     }
+
+    const auto duration = (std::chrono::steady_clock::now() - startForkingTime);
+    const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+    LOG_TRC("Forking child took " << durationMs);
 
     return pid;
 }

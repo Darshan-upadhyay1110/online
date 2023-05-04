@@ -3,9 +3,8 @@
 	----------------------------------*/
 	--cool-font: 'Segoe UI', Tahoma, Arial, Helvetica, sans-serif;
 	/*investigate what are the drawback in consisntly use --cool-fonts
-	for vex, jquery-ui and perhaps mobile*/
+	for jquery-ui and perhaps mobile*/
 	--mobile-font: Trebuchet MS,Tahoma,Verdana,Arial,sans-serif;
-	--vex-font: Trebuchet MS,Tahoma,Verdana,Arial,sans-serif;
 	--jquery-ui-font: Trebuchet MS,Tahoma,Verdana,Arial,sans-serif;
 
 	--docs-font: 'Open Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -13,6 +12,27 @@
 
 	/* Shared color for cell and selection border */
 	--cell-cursor-selection-border-color: var(--color-primary);
+
+	--btn-size: 24px;
+	--border-radius: 4px; /* buttons, widgets */
+	--border-radius-large: 10px; /* dialog */
+
+	--default-font-size: 12px;
+	--header-font-size: 16px;
+
+	--default-height: 24px;
+	--header-height: 38px;
+
+	/* Annotations */
+	--annotation-input-size: 100px;
+}
+
+.access-key {
+	text-decoration: none;
+}
+
+.activate-underlines .access-key {
+	text-decoration: underline;
 }
 
 /* Flexbox */
@@ -112,8 +132,8 @@
 .table-column-resize-marker {
 	margin-left: 0px;
 	margin-top: 0px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background-image: url('images/table-column-resize-marker.svg');
 	background-size: 100% 100%;
 	background-repeat: no-repeat;
@@ -123,8 +143,8 @@
 .table-column-resize-marker:hover {
 	margin-left: 0px;
 	margin-top: 0px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background-image: url('images/table-column-resize-marker-hover.svg');
 	background-size: 100% 100%;
 	background-repeat: no-repeat;
@@ -134,8 +154,8 @@
 .table-row-resize-marker {
 	margin-left: 0px;
 	margin-top: 0px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background-image: url('images/table-row-resize-marker.svg');
 	background-size: 100% 100%;
 	background-repeat: no-repeat;
@@ -145,8 +165,8 @@
 .table-row-resize-marker:hover {
 	margin-left: 0px;
 	margin-top: 0px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background-image: url('images/table-row-resize-marker-hover.svg');
 	background-size: 100% 100%;
 	background-repeat: no-repeat;
@@ -155,8 +175,8 @@
 
 .table-select-marker {
 	margin: 0px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background: url('images/table-row-or-column-select-marker.svg') no-repeat center center /12px;
 	cursor: pointer;
 }
@@ -190,8 +210,8 @@
 .table-move-marker {
 	margin-left: 0px;
 	margin-top: 0px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background-image: url('images/table-move-marker.svg');
 	background-size: 100% 100%;
 	background-repeat: no-repeat;
@@ -300,8 +320,8 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	position: relative;
 	margin-inline-start: 16px;
 	top: 16px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background: url('images/baseline-edit-24px.svg') no-repeat center !important;
 	transform: rotate(0deg);
 	transition: transform 0.5s;
@@ -345,8 +365,8 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 .annotation-marker {
 	margin-left: 0px;
 	margin-top: 0px;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	background-image: url('images/note.svg');
 	background-size: 100% 100%;
 	background-repeat: no-repeat;
@@ -399,6 +419,23 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	border-color: transparent transparent transparent var(--color-background-lighter);
 }
 
+/* With RTL write direction the arrow of the context menu's submenu should be flipped */
+
+[dir='rtl'] .context-menu-submenu:after {
+	right: unset;
+	left: .5em;
+	border-color: transparent #2f2f2f transparent transparent;
+	border-width: .25em .25em .25em 0;
+}
+
+[dir='rtl'] .context-menu-submenu.context-menu-hover:after {
+	border-color: transparent var(--color-background-lighter) transparent transparent;
+}
+
+.mobile-wizard-content .cool-annotation {
+	max-width: none;
+}
+
 .cool-annotation {
 	position: absolute;
 	text-align: center;
@@ -407,6 +444,11 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	-webkit-user-select: text;
 	-ms-user-select: text;
 	z-index: 10;
+	max-width: 250px;
+}
+
+.cool-annotation > .modalpopup {
+	max-height: initial !important;
 }
 
 .cool-annotation:not(annotation-active) .cool-annotation-collapsed{
@@ -437,7 +479,7 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	color: var(--color-main-text);
 	border: none;
 	border-radius: var(--border-radius);
-	width: var(--annotation-input-size);
+	width: auto;
 }
 .cool-annotation-content-wrapper:hover, .cool-annotation-redline-content-wrapper:hover {
 	background-color: var(--color-background-dark);
@@ -447,7 +489,7 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 .annotation-active.modify-annotation-container .cool-annotation-content-wrapper,
 .annotation-active.reply-annotation-container .cool-annotation-content-wrapper,
 .cool-annotation-collapsed.modalpopup {
-	width: var(--annotation-input-size);
+	width: auto;
 }
 
 .cool-annotation-content {
@@ -458,6 +500,9 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 }
 
 .cool-annotation-reply-count-collapsed {
+	text-align: center;
+	margin: 0;
+	padding: 0;
 	background-color: var(--color-primary);
 	color: var(--color-primary-text);
 	font-weight: bold;
@@ -466,11 +511,11 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	border: 1px solid var(--color-primary);
 	border-radius: 50%;
 	z-index: 10;
-	position: absolute;
-	width: 24px;
-	height: 24px;
-	left: 26px;
-	top: -10px;
+	position: relative;
+	width: var(--btn-size);
+	height: var(--btn-size);
+	left: -6px;
+	top: -15px;
 }
 
 #main-document-content {
@@ -569,7 +614,7 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	box-sizing: border-box;
 }
 
-#new-mobile-comment-input-area.cool-annotation-textarea {
+#input-modal-input.cool-annotation-textarea {
 	height: var(--annotation-input-size);
 }
 
@@ -619,8 +664,8 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 
 .user-info {
 	border-radius: 50%;
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 	overflow: auto;
 	margin: auto;
 }
@@ -639,8 +684,8 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	margin: 0 !important;
 	padding: 0 !important;
 	min-width: initial !important;
-	width: 24px !important;
-	height: 24px !important;
+	width: var(--btn-size) !important;
+	height: var(--btn-size) !important;
 	vertical-align: top;
 	border: 1px solid transparent !important;
 	display: inline-block !important;
@@ -777,7 +822,6 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 
 .lokdialog_container.ui-dialog.ui-widget-content {
 	padding: 0px;
-	overflow: visible;
 	width: auto;
 	height: auto;
 	border: none;
@@ -792,6 +836,10 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 .lokdialog.ui-dialog-content.ui-widget-content {
 	overflow: auto;
 	border-radius: calc(var(--border-radius)/2);
+}
+
+.lokdialog.ui-dialog-content [Id$='Page'] {
+	grid-column-gap: 24px;
 }
 
 .lokdialog_container:not(.jsdialog-container) .lokdialog.ui-dialog-content.ui-widget-content {
@@ -864,15 +912,12 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	background-color: var(--color-primary);
 }
 
-.word-wrap-for-vex-dialog {
-	overflow-wrap: break-word;
-}
-
 .hyperlink-popup .leaflet-popup-content {
 	white-space: nowrap;
 	margin: 6px 8px;
 	font-size: 14px;
 	line-height: 1;
+	overflow: hidden;
 }
 
 #hyperlink-pop-up {
@@ -895,6 +940,14 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 .hyperlink-popup-btn:hover {
 	background-color: var(--color-background-darker);
 	border-radius: 50%;
+}
+
+#hyperlink-text-box:not(.mobile-wizard) {
+	width: 100% !important;
+	margin-bottom: 10px;
+	resize: none;
+	height: 32px;
+	box-sizing: border-box;
 }
 
 .leaflet-canvas-container .cell-cursor-data {
@@ -1018,4 +1071,18 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	align-items: center;
 	min-height: 100px;
 	min-width: 100px;
+}
+
+#hyperlink-pop-up-preview {
+	text-align: center;
+}
+
+#hyperlink-pop-up-preview img {
+	max-height: 150px;
+	max-width: 250px;
+}
+
+#hyperlink-pop-up-preview p {
+	text-overflow: ellipsis;
+	overflow: hidden;
 }

@@ -75,20 +75,15 @@ function loadTestDocNoIntegration(fileName, subFolder, noFileCopy, isMultiUser, 
 		}});
 
 	if (!isMultiUser) {
-		cy.get('iframe#coolframe')
-			.its('0.contentDocument').should('exist')
-			.its('body').should('not.be.undefined')
-			.then(cy.wrap).as('coolIFrameGlobal');
+		cy.iframe('#coolframe').then(cy.wrap).as('coolIFrameGlobal');
 
 		Cypress.Commands.overwrite('get', function(originalFn, selector, options) {
-			if (!selector.startsWith('@') && !(selector === '#coolframe')) {
+			if (!selector.startsWith('@') && !selector.includes('#coolframe')) {
 				if (selector === 'body')
-					return cy.get('@coolIFrameGlobal');
-				else
-					return cy.get('@coolIFrameGlobal').find(selector, options);
-			} else {
-				return originalFn(selector, options);
+					return cy.get('@coolIFrameGlobal', options);
+				return cy.get('@coolIFrameGlobal', options).find(selector, options);
 			}
+			return originalFn(selector, options);
 		});
 
 		Cypress.Commands.overwrite('contains', function(originalFn, selector, content, options) {
@@ -361,6 +356,12 @@ function checkIfBothDocIsLoaded() {
 }
 
 function checkIfDocIsLoaded(frameId) {
+	// To debug exceptions more easily - enable this:
+/*	Cypress.on('fail', () => {
+		// eslint-disable-next-line no-debugger
+		debugger;
+	}); */
+
 	// Wait for the document to fully load
 	cy.customGet('.leaflet-canvas-container canvas', frameId, {timeout : Cypress.config('defaultCommandTimeout') * 2.0});
 
@@ -629,8 +630,8 @@ function closeDocument(fileName, testState) {
 			return;
 		}
 
-		cy.get('#uptime')
-			.should('not.have.text', '0');
+		cy.get('#uptime').its('text')
+			.should('not.eq', '0');
 
 		// We have all lines of document infos as one long string.
 		// We have PID number before the file names, with matching
@@ -641,8 +642,9 @@ function closeDocument(fileName, testState) {
 		cy.log('closeDocument - waiting not.match: ' + rexname);
 		// Saving may take much longer now to ensure no unsaved data exists.
 		// This is not an issue on a fast machine, but on the CI we do timeout often.
-		cy.get('#docview', { timeout: Cypress.config('defaultCommandTimeout') * 2.0 })
-			.invoke('text')
+		const options = {timeout : Cypress.config('defaultCommandTimeout') * 2.0};
+		cy.get('#docview', options)
+			.invoke(options, 'text')
 			.should('not.match', regex);
 	}
 

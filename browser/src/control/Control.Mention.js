@@ -43,10 +43,10 @@ L.Control.Mention = L.Control.extend({
 	},
 
 	getCurrentCursorPosition: function () {
-		var cursorCorePixels = this.map._docLayer._cursorCorePixels;
+		var currPos = this.map._docLayer._corePixelsToCss(this.map._docLayer._cursorCorePixels.getBottomLeft());
 		var origin = this.map.getPixelOrigin();
 		var panePos = this.map._getMapPanePos();
-		return new L.Point(Math.round(cursorCorePixels.max.x + panePos.x - origin.x), Math.round(cursorCorePixels.max.y + panePos.y - origin.y));
+		return new L.Point(Math.round(currPos.x + panePos.x - origin.x), Math.round(currPos.y + panePos.y - origin.y));
 	},
 
 	openMentionPopup: function (ev) {
@@ -88,6 +88,7 @@ L.Control.Mention = L.Control.extend({
 				'text': '',
 				'enabled': true,
 				'singleclickactivate': false,
+				'fireKeyEvents': true
 			};
 			// update the popup with list if mentionList already exist
 			if (L.DomUtil.get('mentionList')) {
@@ -168,7 +169,7 @@ L.Control.Mention = L.Control.extend({
 					value: this.map._docLayer._mentionText.join(''),
 				}
 			};
-			this._map.sendUnoCommand('.uno:SetHyperlink', command);
+			this._map.sendUnoCommand('.uno:SetHyperlink', command, true);
 			this.map.fire('postMessage', { msgId: 'UI_Mention', args: { type: 'selected', username: this.itemList[index].username }});
 			this.closeMentionPopup({ 'typingMention': false });
 		} else if (eventType === 'keydown') {

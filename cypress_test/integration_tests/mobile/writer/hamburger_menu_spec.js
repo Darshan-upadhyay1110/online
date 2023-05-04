@@ -179,7 +179,7 @@ describe('Trigger hamburger menu options.', function() {
 
 	it('Repair Document', function() {
 		helper.typeIntoDocument('Hello World');
-		
+
 		repairHelper.rollbackPastChange('Typing: “World”', undefined, true);
 
 		helper.selectAllText();
@@ -192,19 +192,7 @@ describe('Trigger hamburger menu options.', function() {
 
 		mobileHelper.selectHamburgerMenuItem(['Edit', 'Cut']);
 
-		// TODO: cypress does not support clipboard operations
-		// so we get a warning dialog here.
-		cy.get('.vex-dialog-form')
-			.should('be.visible');
-
-		cy.get('.vex-dialog-message')
-			.should('have.text', 'Please use the copy/paste buttons on your on-screen keyboard.');
-
-		cy.get('.vex-dialog-buttons .button-primary')
-			.click();
-
-		cy.get('.vex-dialog-form')
-			.should('not.exist');
+		cy.get('#mobile-wizard-content-modal-dialog-copy_paste_warning-box').should('exist');
 	});
 
 	it('Copy.', function() {
@@ -212,19 +200,7 @@ describe('Trigger hamburger menu options.', function() {
 
 		mobileHelper.selectHamburgerMenuItem(['Edit', 'Copy']);
 
-		// TODO: cypress does not support clipboard operations
-		// so we get a warning dialog here.
-		cy.get('.vex-dialog-form')
-			.should('be.visible');
-
-		cy.get('.vex-dialog-message')
-			.should('have.text', 'Please use the copy/paste buttons on your on-screen keyboard.');
-
-		cy.get('.vex-dialog-buttons .button-primary.vex-first')
-			.click();
-
-		cy.get('.vex-dialog-form')
-			.should('not.exist');
+		cy.get('#mobile-wizard-content-modal-dialog-copy_paste_warning-box').should('exist');
 	});
 
 	it('Paste.', function() {
@@ -232,19 +208,7 @@ describe('Trigger hamburger menu options.', function() {
 
 		mobileHelper.selectHamburgerMenuItem(['Edit', 'Paste']);
 
-		// TODO: cypress does not support clipboard operations
-		// so we get a warning dialog here.
-		cy.get('.vex-dialog-form')
-			.should('be.visible');
-
-		cy.get('.vex-dialog-message')
-			.should('have.text', 'Please use the copy/paste buttons on your on-screen keyboard.');
-
-		cy.get('.vex-dialog-buttons .button-primary')
-			.click();
-
-		cy.get('.vex-dialog-form')
-			.should('not.exist');
+		cy.get('#mobile-wizard-content-modal-dialog-copy_paste_warning-box').should('exist');
 	});
 
 	it('Select all.', function() {
@@ -573,6 +537,8 @@ describe('Trigger hamburger menu options.', function() {
 		// Then disable it again.
 		mobileHelper.selectHamburgerMenuItem(['View', 'Formatting Marks']);
 
+		helper.typeIntoDocument('{home}{end}');
+
 		helper.canvasShouldBeFullWhite(canvas);
 	});
 
@@ -591,24 +557,21 @@ describe('Trigger hamburger menu options.', function() {
 		// Then disable it again.
 		mobileHelper.selectHamburgerMenuItem(['View', 'Automatic Spell Checking']);
 
+		helper.typeIntoDocument('{home}{end}');
+
 		helper.canvasShouldBeFullWhite(canvas);
 	});
 
 	it('Check version information.', function() {
 		mobileHelper.selectHamburgerMenuItem(['About']);
 
-		cy.get('.vex-content')
+		cy.get('#mobile-wizard-content')
 			.should('exist');
 
 		// Check the version
-		cy.contains('#lokit-version', 'Collabora Office')
-			.should('exist');
+		cy.contains('#lokit-version', 'Collabora Office').should('exist');
 
 		// Close about dialog
-		cy.get('.vex-close')
-			.click({force : true});
-
-		cy.get('.vex-content')
-			.should('not.exist');
+		cy.get('div.mobile-wizard.jsdialog-overlay.cancellable').click({force : true});
 	});
 });

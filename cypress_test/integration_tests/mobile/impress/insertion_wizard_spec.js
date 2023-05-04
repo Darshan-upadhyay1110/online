@@ -76,12 +76,12 @@ describe('Impress insertion wizard.', function() {
 			.click();
 
 		// Comment insertion dialog is opened
-		cy.get('#comment-container-new').should('exist');
+		cy.get('#mobile-wizard-content-modal-dialog-new-annotation-dialog').should('exist');
 
 		// Add some comment
-		cy.get('#new-mobile-comment-input-area').type('some text');
+		cy.get('#input-modal-input').type('some text');
 
-		cy.get('.button-primary').click();
+		cy.get('#response-ok').click();
 
 		cy.get('#comment-container-1').should('exist');
 
@@ -153,17 +153,17 @@ describe('Impress insertion wizard.', function() {
 			.click();
 
 		// Dialog is opened
-		cy.get('.vex-content.hyperlink-dialog')
+		cy.get('#hyperlink-link-box')
 			.should('exist');
 
 		// Type text and link
-		cy.get('.vex-content.hyperlink-dialog textarea[name="text"]')
+		cy.get('#hyperlink-text-box')
 			.type('some text');
-		cy.get('.vex-content.hyperlink-dialog input[name="link"]')
+		cy.get('#hyperlink-link-box')
 			.type('www.something.com');
 
 		// Insert
-		cy.get('.vex-content.hyperlink-dialog .button-primary')
+		cy.get('#response-ok')
 			.click();
 
 		// TODO: we have some wierd shape here instead of a text shape with the link
@@ -350,17 +350,17 @@ describe('Impress insertion wizard.', function() {
 			.click();
 
 		// Dialog is opened
-		cy.get('.vex-content.hyperlink-dialog')
+		cy.get('#hyperlink-link-box')
 			.should('exist');
 
 		// Type text and link
-		cy.get('.vex-content.hyperlink-dialog textarea[name="text"]')
+		cy.get('#hyperlink-text-box')
 			.type('some text');
-		cy.get('.vex-content.hyperlink-dialog input[name="link"]')
+		cy.get('#hyperlink-link-box')
 			.type('www.something.com');
 
 		// Insert
-		cy.get('.vex-content.hyperlink-dialog .button-primary')
+		cy.get('#response-ok')
 			.click();
 
 		// Check the text

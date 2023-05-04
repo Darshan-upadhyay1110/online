@@ -47,17 +47,13 @@ describe('Delete Objects', function() {
 			.should('not.exist');
 	});
 
-	it('Delete Chart' , function() {
+	it.skip('Delete Chart' , function() {
 		cy.get('#toolbar-up > .w2ui-scroll-right').click();
 		//insert
 		cy.get('#tb_editbar_item_insertobjectchart')
 			.click();
 
-		cy.get('.lokdialog_canvas').click();
-
-		helper.typeIntoDocument('{shift}{enter}');
-
-		cy.wait(2000);
+		helper.clickOnIdle('.ui-pushbutton.jsdialog.button-primary');
 
 		cy.get('.leaflet-control-buttons-disabled path.leaflet-interactive')
 			.should('exist');

@@ -19,13 +19,6 @@ describe('Sheet Operations.', function () {
 		cy.get('button.spreadsheet-tab').should('have.length', n);
 	}
 
-	function clickVexDialogButton(buttonText) {
-		cy.get('.vex-content').should('exist');
-
-		cy.contains('.vex-dialog-buttons button', buttonText)
-			.click();
-	}
-
 	function selectOptionFromContextMenu(contextMenu) {
 		cy.wait(1000);
 
@@ -54,7 +47,7 @@ describe('Sheet Operations.', function () {
 		cy.get('#tb_spreadsheet-toolbar_item_insertsheet').click();
 		assertNumberofSheets(2);
 
-		cy.get('#spreadsheet-tab1').click();
+		helper.clickOnIdle('#spreadsheet-tab1');
 
 		calcHelper.ensureViewContainsCellCursor();
 
@@ -62,10 +55,7 @@ describe('Sheet Operations.', function () {
 
 		calcHelper.ensureViewContainsCellCursor();
 
-		helper.waitUntilIdle('#spreadsheet-tab0');
-
-		cy.get('#spreadsheet-tab0').click();
-
+		helper.clickOnIdle('#spreadsheet-tab0');
 		calcHelper.ensureViewContainsCellCursor();
 	});
 
@@ -106,7 +96,7 @@ describe('Sheet Operations.', function () {
 
 		selectOptionFromContextMenu('Delete Sheet...');
 
-		clickVexDialogButton('OK');
+		cy.get('#delete-sheet-modal-response').click();
 
 		assertNumberofSheets(1);
 	});
@@ -142,11 +132,11 @@ describe('Sheet Operations.', function () {
 		//show sheet
 		selectOptionFromContextMenu('Show Sheet');
 
-		cy.get('.vex-content').should('exist');
+		cy.get('#show-sheets-modal').should('exist');
 
 		cy.get('#hidden-part-checkbox-1').check();
 
-		clickVexDialogButton('Show Selected Sheets');
+		cy.get('#show-sheets-modal-response').click();
 
 		assertNumberofSheets(2);
 	});

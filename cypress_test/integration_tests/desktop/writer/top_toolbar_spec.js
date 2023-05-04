@@ -23,6 +23,11 @@ describe('Top toolbar tests.', function() {
 		helper.afterAll(testFileName, this.currentTest.state);
 	});
 
+	function refreshCopyPasteContainer() {
+		helper.typeIntoDocument('{rightArrow}');
+		writerHelper.selectAllTextOfDoc();
+	}
+
 	it('Apply highlight color.', function() {
 		desktopHelper.actionOnSelector('backColor', (selector) => { cy.get(selector).click(); });
 
@@ -56,6 +61,8 @@ describe('Top toolbar tests.', function() {
 			desktopHelper.selectFromListbox('Title');
 		}
 
+		refreshCopyPasteContainer();
+
 		cy.get('#copy-paste-container p font font')
 			.should('have.attr', 'style', 'font-size: 28pt');
 	});
@@ -64,6 +71,8 @@ describe('Top toolbar tests.', function() {
 		desktopHelper.actionOnSelector('fontName', (selector) => { cy.get(selector).click(); });
 
 		desktopHelper.selectFromListbox('Alef');
+
+		refreshCopyPasteContainer();
 
 		cy.get('#copy-paste-container p font')
 			.should('have.attr', 'face', 'Alef, sans-serif');
@@ -110,6 +119,8 @@ describe('Top toolbar tests.', function() {
 		desktopHelper.actionOnSelector('fontSize', (selector) => { cy.get(selector).click(); });
 
 		desktopHelper.selectFromListbox('72');
+
+		refreshCopyPasteContainer();
 
 		cy.get('#copy-paste-container p font')
 			.should('have.attr', 'style', 'font-size: 72pt');
@@ -272,7 +283,7 @@ describe('Top toolbar tests.', function() {
 	});
 
 	it('Insert comment.', function() {
-		desktopHelper.insertMultipleComment('writer', 1, true);
+		desktopHelper.insertMultipleComment('writer', 1, false);
 
 		cy.get('.cool-annotation-content-wrapper').should('exist');
 
@@ -330,7 +341,7 @@ describe('Top toolbar tests.', function() {
 
 		desktopHelper.actionOnSelector('hyperLink', (selector) => { cy.get(selector).click(); });
 
-		cy.get('.vex-content.hyperlink-dialog')
+		cy.get('#hyperlink-link-box')
 			.should('exist');
 
 		cy.get('#hyperlink-text-box')
@@ -339,7 +350,7 @@ describe('Top toolbar tests.', function() {
 		cy.get('#hyperlink-link-box')
 			.type('www.something.com');
 
-		cy.get('.vex-dialog-buttons .button-primary')
+		cy.get('#response-ok')
 			.click();
 
 		writerHelper.selectAllTextOfDoc();
@@ -497,7 +508,15 @@ describe('Top toolbar tests.', function() {
 
 		desktopHelper.actionOnSelector('insertSymbol', (selector) => { cy.get(selector).click(); });
 
-		desktopHelper.checkDialogAndClose('Special Characters');
+		cy.get('.jsdialog-container.ui-dialog.ui-widget-content.lokdialog_container').should('be.visible');
+
+		cy.get('.ui-dialog-title').should('have.text', 'Special Characters');
+
+		helper.clickOnIdle('#favchar1');
+
+		helper.clickOnIdle('.ui-pushbutton.jsdialog.button-primary');
+
+		helper.expectTextForClipboard('€');
 	});
 
 	it('Hide/show menu bar.', function() {
@@ -582,7 +601,7 @@ describe('Top toolbar tests.', function() {
 		}
 
 		cy.get('#StatePageNumber')
-			.should('have.text', 'Page 2 of 2');
+			.should('have.text', 'Pages 1 and 2 of 2');
 
 		helper.selectAllText();
 

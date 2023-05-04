@@ -107,7 +107,8 @@ ChildSession::ChildSession(
     _docManager(&docManager),
     _viewId(-1),
     _isDocLoaded(false),
-    _copyToClipboard(false)
+    _copyToClipboard(false),
+    _canonicalViewId(-1)
 {
     LOG_INF("ChildSession ctor [" << getName() << "]. JailRoot: [" << _jailRoot << ']');
 }
@@ -246,8 +247,101 @@ bool ChildSession::_handleInput(const char *buffer, int length)
         InputProcessingManager processInput(getProtocol(), false);
         _isDocLoaded = loadDocument(tokens);
 
-        LOG_TRC("isDocLoaded state after loadDocument: " << _isDocLoaded << '.');
+        LOG_TRC("isDocLoaded state after loadDocument: " << _isDocLoaded);
         return _isDocLoaded;
+    }
+    else if (tokens.equals(0, "extractlinktargets"))
+    {
+        if (tokens.size() < 2)
+        {
+            sendTextFrameAndLogError("error: cmd=extractlinktargets kind=syntax");
+            return false;
+        }
+
+        if (!_isDocLoaded)
+        {
+            sendTextFrameAndLogError("error: cmd=extractlinktargets kind=docnotloaded");
+            return false;
+        }
+
+        assert(!getDocURL().empty());
+        assert(!getJailedFilePath().empty());
+
+        char* data = _docManager->getLOKit()->extractRequest(getJailedFilePath().c_str());
+        if (!data)
+        {
+            LOG_TRC("extractRequest returned no data.");
+            sendTextFrame("extractedlinktargets: { }");
+            return false;
+        }
+
+        LOG_TRC("Extracted link targets: " << data);
+        bool success = sendTextFrame("extractedlinktargets: " + std::string(data));
+        free(data);
+
+        return success;
+    }
+    else if (tokens.equals(0, "getthumbnail"))
+    {
+        if (tokens.size() < 3)
+        {
+            sendTextFrameAndLogError("error: cmd=getthumbnail kind=syntax");
+            return false;
+        }
+
+        if (!_isDocLoaded)
+        {
+            sendTextFrameAndLogError("error: cmd=getthumbnail kind=docnotloaded");
+            return false;
+        }
+
+        int x, y;
+        if (!getTokenInteger(tokens[1], "x", x))
+            x = 0;
+
+        if (!getTokenInteger(tokens[2], "y", y))
+            y = 0;
+
+        bool success = false;
+
+        // Size of thumbnail in pixels
+        constexpr int width = 1200;
+        constexpr int height = 630;
+
+        // Unclear what this "zoom" level means
+        constexpr float zoom = 1;
+
+        // The magic number 15 is the number of twips per pixel for a resolution of 96 pixels per
+        // inch, which apparently is some "standard".
+        constexpr int widthTwips = width * 15 / zoom;
+        constexpr int heightTwips = height * 15 / zoom;
+        constexpr int offsetXTwips = 15 * 15; // start 15 pixels before the target to get a clearer thumbnail
+        constexpr int offsetYTwips = 15 * 15;
+
+        const auto mode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
+
+        std::vector<unsigned char> thumbnail(width * height * 4);
+        getLOKitDocument()->paintTile(thumbnail.data(), width, height, x - offsetXTwips, y - offsetYTwips, widthTwips, heightTwips);
+
+        std::vector<char> pngThumbnail;
+        if (Png::encodeBufferToPNG(thumbnail.data(), width, height, pngThumbnail, mode))
+        {
+            std::ostringstream oss;
+            oss << "sendthumbnail:\n";
+            oss.write(pngThumbnail.data(), pngThumbnail.size());
+
+            std::string sendThumbnailCommand = oss.str();
+            success = sendBinaryFrame(sendThumbnailCommand.data(), sendThumbnailCommand.size());
+        }
+        else
+        {
+            LOG_ERR("Encoding thumbnail failed.");
+            std::string error = "sendthumbnail: error";
+            sendTextFrame(error.data(), error.size());
+            success = false;
+        }
+
+        return success;
     }
     else if (!_isDocLoaded)
     {
@@ -464,6 +558,7 @@ bool ChildSession::_handleInput(const char *buffer, int length)
         else if (tokens.equals(0, "userinactive"))
         {
             setIsActive(false);
+            _docManager->trimIfInactive();
         }
         else if (tokens.equals(0, "windowcommand"))
         {
@@ -531,7 +626,7 @@ bool ChildSession::_handleInput(const char *buffer, int length)
         }
         else if (tokens.equals(0, "sallogoverride"))
         {
-            if (tokens.size() == 0 || tokens.equals(1, "default"))
+            if (tokens.empty() || tokens.equals(1, "default"))
             {
                 getLOKit()->setOption("sallogoverride", nullptr);
             }
@@ -785,7 +880,7 @@ bool ChildSession::loadDocument(const StringVector& tokens)
     }
 
     // Respond by the document status
-    LOG_DBG("Sending status after loading view " << _viewId << '.');
+    LOG_DBG("Sending status after loading view " << _viewId);
     const std::string status = LOKitHelper::documentStatus(getLOKitDocument()->get());
     if (status.empty() || !sendTextFrame("status: " + status))
     {
@@ -1075,15 +1170,20 @@ bool ChildSession::downloadAs(const StringVector& tokens)
         jailDoc = jailDoc.substr(0, jailDoc.find(JAILED_DOCUMENT_ROOT)) + JAILED_DOCUMENT_ROOT;
     }
 
+#if !MOBILEAPP
+    consistencyCheckJail();
+#endif
+
     // The file is removed upon downloading.
     const std::string tmpDir = FileUtil::createRandomDir(jailDoc);
     const std::string urlToSend = tmpDir + '/' + filenameParam.getFileName();
     const std::string url = jailDoc + urlToSend;
     const std::string urlAnonym = jailDoc + tmpDir + '/' + Poco::Path(nameAnonym).getFileName();
 
-    LOG_DBG("Calling LOK's saveAs with: url='" << urlAnonym << "', format='" <<
-            (format.empty() ? "(nullptr)" : format.c_str()) << "', ' filterOptions=" <<
-            (filterOptions.empty() ? "(nullptr)" : filterOptions.c_str()) << "'.");
+    LOG_DBG("Calling LOK's saveAs with URL: ["
+            << urlAnonym << "], Format: [" << (format.empty() ? "(nullptr)" : format.c_str())
+            << "], Filter Options: ["
+            << (filterOptions.empty() ? "(nullptr)" : filterOptions.c_str()) << ']');
 
     bool success = getLOKitDocument()->saveAs(url.c_str(),
                                format.empty() ? nullptr : format.c_str(),
@@ -1365,7 +1465,15 @@ bool ChildSession::insertFile(const StringVector& tokens)
             url = "file://" + jailDoc + "insertfile/" + name;
         }
         else if (type == "graphicurl")
+        {
             URI::decode(name, url);
+            if (!Util::startsWith(Util::toLower(url), "http"))
+            {
+                // Do not allow arbitrary schemes, especially "file://".
+                sendTextFrameAndLogError("error: cmd=insertfile kind=syntax");
+                return false;
+            }
+        }
 #else
         assert(type == "graphic");
         auto binaryData = decodeBase64(data);
@@ -1776,6 +1884,7 @@ bool ChildSession::unoCommand(const StringVector& tokens)
     const bool bNotify = (tokens.equals(1, ".uno:Save") ||
                           tokens.equals(1, ".uno:Undo") ||
                           tokens.equals(1, ".uno:Redo") ||
+                          tokens.equals(1, ".uno:OpenHyperlink") ||
                           tokens.startsWith(1, "vnd.sun.star.script:"));
 
     getLOKitDocument()->setView(_viewId);
@@ -2405,7 +2514,7 @@ bool ChildSession::saveAs(const StringVector& tokens)
         std::vector<std::string> pathSegments;
         wopiURL.getPathSegments(pathSegments);
 
-        if (pathSegments.size() == 0)
+        if (pathSegments.empty())
         {
             sendTextFrameAndLogError("error: cmd=saveas kind=syntax");
             return false;
@@ -2449,9 +2558,10 @@ bool ChildSession::saveAs(const StringVector& tokens)
     // We don't have the FileId at this point, just a new filename to save-as.
     // So here the filename will be obfuscated with some hashing, which later will
     // get a proper FileId that we will use going forward.
-    LOG_DBG("Calling LOK's saveAs with: '" << anonymizeUrl(wopiFilename) << "', '" <<
-            (format.size() == 0 ? "(nullptr)" : format.c_str()) << "', '" <<
-            (filterOptions.size() == 0 ? "(nullptr)" : filterOptions.c_str()) << "'.");
+    LOG_DBG("Calling LOK's saveAs with URL: ["
+            << anonymizeUrl(wopiFilename) << "], Format: ["
+            << (format.empty() ? "(nullptr)" : format.c_str()) << "], Filter Options: ["
+            << (filterOptions.empty() ? "(nullptr)" : filterOptions.c_str()) << ']');
 
     getLOKitDocument()->setView(_viewId);
 
@@ -2461,6 +2571,10 @@ bool ChildSession::saveAs(const StringVector& tokens)
     else
         // url is already encoded
         encodedURL = url;
+
+#if !MOBILEAPP
+    consistencyCheckJail();
+#endif
 
     std::string encodedWopiFilename;
     Poco::URI::encode(wopiFilename, "", encodedWopiFilename);
@@ -2484,13 +2598,14 @@ bool ChildSession::saveAs(const StringVector& tokens)
 
         if (retry)
         {
-            LOG_DBG("Retry: calling LOK's saveAs with: '" << url.c_str() << "', '" <<
-                    (format.size() == 0 ? "(nullptr)" : format.c_str()) << "', '" <<
-                    (filterOptions.size() == 0 ? "(nullptr)" : filterOptions.c_str()) << "'.");
+            LOG_DBG("Retry: calling LOK's saveAs with URL: ["
+                    << url << "], Format: [" << (format.empty() ? "(nullptr)" : format.c_str())
+                    << "], Filter Options: ["
+                    << (filterOptions.empty() ? "(nullptr)" : filterOptions.c_str()) << ']');
 
-            success = getLOKitDocument()->saveAs(encodedURL.c_str(),
-                    format.size() == 0 ? nullptr :format.c_str(),
-                    filterOptions.size() == 0 ? nullptr : filterOptions.c_str());
+            success = getLOKitDocument()->saveAs(
+                encodedURL.c_str(), format.empty() ? nullptr : format.c_str(),
+                filterOptions.empty() ? nullptr : filterOptions.c_str());
         }
     }
 
@@ -2519,7 +2634,7 @@ bool ChildSession::exportAs(const StringVector& tokens)
         std::vector<std::string> pathSegments;
         wopiURL.getPathSegments(pathSegments);
 
-        if (pathSegments.size() == 0)
+        if (pathSegments.empty())
         {
             sendTextFrameAndLogError("error: cmd=exportas kind=syntax");
             return false;
@@ -2545,7 +2660,7 @@ bool ChildSession::exportAs(const StringVector& tokens)
         // We don't have the FileId at this point, just a new filename to save-as.
         // So here the filename will be obfuscated with some hashing, which later will
         // get a proper FileId that we will use going forward.
-        LOG_DBG("Calling LOK's exportAs with: '" << anonymizeUrl(wopiFilename) << "'.");
+        LOG_DBG("Calling LOK's exportAs with: [" << anonymizeUrl(wopiFilename) << ']');
 
         getLOKitDocument()->setView(_viewId);
 
@@ -3002,6 +3117,8 @@ void ChildSession::loKitCallback(const int type, const std::string& payload)
         if (!commandName.isEmpty() && commandName.toString() == ".uno:Save")
         {
 #if !MOBILEAPP
+            consistencyCheckJail();
+
             // Create the 'upload' file regardless of success or failure,
             // because we don't know if the last upload worked or not.
             // DocBroker will have to decide to upload or skip.

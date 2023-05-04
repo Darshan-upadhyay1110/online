@@ -30,7 +30,6 @@ L.Map.include({
 
 declare var L: any;
 declare var app: any;
-declare var vex: any;
 declare var $: any;
 declare var _: any;
 
@@ -64,18 +63,23 @@ export class CommentSection extends CanvasSectionObject {
 		this.sectionProperties.commentList = new Array(0);
 		this.sectionProperties.selectedComment = null;
 		this.sectionProperties.arrow = null;
-		this.sectionProperties.initialLayoutData = null;
 		this.sectionProperties.showResolved = null;
 		this.sectionProperties.marginY = 10 * app.dpiScale;
 		this.sectionProperties.offset = 5 * app.dpiScale;
 		this.sectionProperties.layoutTimer = null;
 		this.sectionProperties.width = Math.round(1 * app.dpiScale); // Configurable variable.
 		this.sectionProperties.scrollAnnotation = null; // For impress, when 1 or more comments exist.
+		this.sectionProperties.commentWidth = 300 * 1.2; // CSS pixels.
+		this.sectionProperties.collapsedMarginToTheEdge = (<any>window).mode.isTablet() ? 120: 70; // CSS pixels.
+		this.sectionProperties.deflectionOfSelectedComment = 160; // CSS pixels.
+		this.sectionProperties.calcCurrentComment = null; // We don't automatically show a Calc comment when cursor is on its cell. But we remember it to show if user presses Alt+C keys.
+		// This (commentsAreListed) variable means that comments are shown as a list on the right side of the document.
+		this.sectionProperties.commentsAreListed = (this.sectionProperties.docLayer._docType === 'text' || this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing') && !(<any>window).mode.isMobile();
 		this.idIndexMap = new Map<any, number>();
 	}
 
 	public onInitialize (): void {
-		this.setExpanded();
+		this.checkCollapseState();
 
 		this.map.on('RedlineAccept', this.onRedlineAccept, this);
 		this.map.on('RedlineReject', this.onRedlineReject, this);
@@ -89,7 +93,6 @@ export class CommentSection extends CanvasSectionObject {
 		}, this);
 
 		this.map.on('zoomend', function() {
-			this.map.fire('mobilewizardpopupclose');
 			this.checkCollapseState();
 			this.layout(true);
 		}, this);
@@ -109,10 +112,19 @@ export class CommentSection extends CanvasSectionObject {
 	}
 
 	private checkCollapseState(): void {
-		if (this.shouldCollapse())
-			this.setCollapsed();
-		else
-			this.setExpanded();
+		if (!(<any>window).mode.isMobile() && this.sectionProperties.docLayer._docType !== 'spreadsheet') {
+			if (this.shouldCollapse()) {
+				this.sectionProperties.deflectionOfSelectedComment = 180;
+				this.setCollapsed();
+			}
+			else {
+				this.sectionProperties.deflectionOfSelectedComment = 70;
+				this.setExpanded();
+			}
+
+			if (this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing')
+				this.showHideComments();
+		}
 	}
 
 	private findNextPartWithComment (currentPart: number): number {
@@ -147,28 +159,6 @@ export class CommentSection extends CanvasSectionObject {
 		}
 	}
 
-	private hideCommentListPanel (): void {
-		if (this.size[0] !== 0) {
-			this.size[0] = 0;
-
-			this.containerObject.reNewAllSections(true);
-			this.sectionProperties.docLayer._syncTileContainerSize();
-
-			app.sectionContainer.requestReDraw();
-		}
-	}
-
-	private showCommentListPanel (): void {
-		if (this.size[0] !== this.sectionProperties.width) {
-			this.size[0] = this.sectionProperties.width;
-
-			this.containerObject.reNewAllSections(true);
-			this.sectionProperties.docLayer._syncTileContainerSize();
-
-			app.sectionContainer.requestReDraw();
-		}
-	}
-
 	private checkSize (): void {
 		// When there is no comment || file is a spreadsheet || view type is mobile, we set this section's size to [0, 0].
 		if (this.sectionProperties.docLayer._docType === 'spreadsheet' || (<any>window).mode.isMobile() || this.sectionProperties.commentList.length === 0)
@@ -177,73 +167,42 @@ export class CommentSection extends CanvasSectionObject {
 				this.map.removeControl(this.sectionProperties.scrollAnnotation);
 				this.sectionProperties.scrollAnnotation = null;
 			}
-
-			this.hideCommentListPanel();
 		}
 		else if (this.sectionProperties.docLayer._docType === 'presentation') { // If there are comments but none of them are on the selected part.
 			if (!this.sectionProperties.scrollAnnotation) {
 				this.sectionProperties.scrollAnnotation = L.control.scrollannotation();
 				this.sectionProperties.scrollAnnotation.addTo(this.map);
 			}
-
-			var hide = true;
-			for (var i: number = 0; i < this.sectionProperties.commentList.length; i++) {
-				var comment = this.sectionProperties.commentList[i];
-				if (comment.sectionProperties.partIndex === this.sectionProperties.docLayer._selectedPart) {
-					hide = false;
-					break;
-				}
-			}
-			if (hide) {
-				this.hideCommentListPanel();
-			}
-			else {
-				this.showCommentListPanel();
-			}
-		}
-		else {
-			this.showCommentListPanel();
 		}
 	}
 
 	public setCollapsed(): void {
-		if (this.sectionProperties.docLayer._docType === 'spreadsheet')
-			return;
-
 		this.isCollapsed = true;
-		this.removeHighlighters();
 		this.unselect();
 		for (var i: number = 0; i < this.sectionProperties.commentList.length; i++) {
 			if (this.sectionProperties.commentList[i].sectionProperties.data.id !== 'new')
 				this.sectionProperties.commentList[i].setCollapsed();
 		}
-
-		if ((<any>window).mode.isMobile()
-			|| this.sectionProperties.docLayer._docType === 'spreadsheet'
-			|| this.sectionProperties.commentList.length === 0)
-			return;
 	}
 
 	public setExpanded(): void {
 		this.isCollapsed = false;
-		this.removeHighlighters();
 		for (var i: number = 0; i < this.sectionProperties.commentList.length; i++) {
 			this.sectionProperties.commentList[i].setExpanded();
 		}
+	}
 
-		if ((<any>window).mode.isMobile()
-			|| this.sectionProperties.docLayer._docType === 'spreadsheet'
-			|| this.sectionProperties.commentList.length === 0)
-			return;
+	private calculateAvailableSpace() {
+		var availableSpace = (this.containerObject.getDocumentAnchorSection().size[0] - app.file.size.pixels[0]) * 0.5;
+		availableSpace = Math.round(availableSpace / app.dpiScale);
+		return availableSpace;
 	}
 
 	public shouldCollapse (): boolean {
-		if (!this.containerObject.getDocumentAnchorSection())
+		if (!this.containerObject.getDocumentAnchorSection() || this.sectionProperties.docLayer._docType === 'spreadsheet' || (<any>window).mode.isMobile())
 			return false;
 
-		var commentWidth = 300;
-		var availableSpace = this.containerObject.getDocumentAnchorSection().size[0] - app.file.size.pixels[0];
-		return availableSpace < commentWidth * 2;
+		return this.calculateAvailableSpace() < this.sectionProperties.commentWidth;
 	}
 
 	public hideAllComments (): void {
@@ -375,39 +334,73 @@ export class CommentSection extends CanvasSectionObject {
 		}
 	}
 
-	public newAnnotationVex (comment: any, addCommentFn: any, isMod: any): void {
+	public newAnnotationMobile (comment: any, addCommentFn: any, isMod: any): void {
 		var commentData = comment.sectionProperties.data;
 
-		var dialog = vex.dialog.open({
-			contentClassName: 'vex-has-inputs',
-			message: '',
-			input: [
-				'<textarea name="comment" id="new-mobile-comment-input-area" class="cool-annotation-textarea" required>' + (commentData.text && isMod ? commentData.text: '') + '</textarea>'
-			].join(''),
-			buttons: [
-				$.extend({}, vex.dialog.buttons.NO, { text: _('Cancel') }),
-				$.extend({}, vex.dialog.buttons.YES, { text: _('Save') })
-			],
-			callback: function (data: any) {
-				if (data) {
-					var annotation = comment;
+		var callback = function(data: string) {
+			if (data) {
+				var annotation = comment;
 
-					annotation.sectionProperties.data.text = data.comment;
-					comment.text = data.comment;
+				annotation.sectionProperties.data.text = data;
+				comment.text = data;
 
-					addCommentFn.call(annotation, annotation, comment);
-					if (!isMod)
-						this.containerObject.removeSection(annotation);
+				addCommentFn.call(annotation, annotation, comment);
+				if (!isMod)
+					this.containerObject.removeSection(annotation);
+			}
+			else {
+				this.cancel(comment);
+			}
+		}.bind(this);
+
+		var id = 'new-annotation-dialog';
+		var dialogId = this.map.uiManager.generateModalId(id);
+		var json = this.map.uiManager._modalDialogJSON(id, '', true, [
+			{
+				id: 'input-modal-input',
+				type: 'multilineedit',
+				text: (commentData.text && isMod ? commentData.text: '')
+			},
+			{
+				id: '',
+				type: 'buttonbox',
+				text: '',
+				enabled: true,
+				children: [
+					{
+						id: 'response-cancel',
+						type: 'pushbutton',
+						text: _('Cancel'),
+					},
+					{
+						id: 'response-ok',
+						type: 'pushbutton',
+						text: _('Save'),
+						'has_default': true,
+					}
+				],
+				vertical: false,
+				layoutstyle: 'end'
+			},
+		]);
+
+		var cancelFunction = function() {
+			this.cancel(comment);
+			this.map.uiManager.closeModal(dialogId);
+		}.bind(this);
+
+		this.map.uiManager.showModal(json, [
+			{id: 'response-ok', func: function() {
+				if (typeof callback === 'function') {
+					var input = document.getElementById('input-modal-input') as HTMLTextAreaElement;
+					callback(input.value);
 				}
-				else {
-					this.cancel(comment);
-				}
-			}.bind(this),
-
-			// Allow close on click away only in desktop (in case of reduced window size otherwise we wont use vex).
-			// Refer: vex.defaultOptions in vex.combined.js
-			overlayClosesOnClick: (<any>window).mode.isMobile() || (<any>window).mode.isTablet(),
-		});
+				this.map.uiManager.closeModal(dialogId);
+			}.bind(this)},
+			{id: 'response-cancel', func: cancelFunction},
+			{id: '__POPOVER__', func: cancelFunction},
+			{id: '__DIALOG__', func: cancelFunction}
+		]);
 
 		var tagTd = 'td',
 		empty = '',
@@ -439,9 +432,9 @@ export class CommentSection extends CanvasSectionObject {
 			$(contentDate).text(isNaN(d.getTime()) ? comment.dateTime: d.toLocaleDateString((<any>String).locale, <any>dateOptions));
 		}
 
-		dialog.contentEl.insertBefore(author, dialog.contentEl.childNodes[0]);
-
-		$(dialog.contentEl).find('textarea').focus();
+		var parent = document.getElementById('new-annotation-dialog').parentElement;
+		parent.insertBefore(author, parent.childNodes[0]);
+		document.getElementById('input-modal-input').focus();
 	}
 
 	public hightlightComment (comment: any): void {
@@ -503,11 +496,11 @@ export class CommentSection extends CanvasSectionObject {
 			};
 			if (app.file.fileBasedView) {
 				this.map.setPart(this.sectionProperties.docLayer._selectedPart, false);
-				this.map.sendUnoCommand('.uno:InsertAnnotation', comment);
+				this.map.sendUnoCommand('.uno:InsertAnnotation', comment, true /* force */);
 				this.map.setPart(0, false);
 			}
 			else {
-				this.map.sendUnoCommand('.uno:InsertAnnotation', comment);
+				this.map.sendUnoCommand('.uno:InsertAnnotation', comment, true /* force */);
 			}
 
 			this.removeItem(annotation.sectionProperties.data.id);
@@ -522,26 +515,30 @@ export class CommentSection extends CanvasSectionObject {
 					value: annotation.sectionProperties.data.text
 				}
 			};
-			this.map.sendUnoCommand('.uno:CommentChangeTracking', comment);
+			this.map.sendUnoCommand('.uno:CommentChangeTracking', comment, true /* force */);
 		} else {
 			comment = {
 				Id: {
 					type: 'string',
 					value: annotation.sectionProperties.data.id
 				},
+			        Author: {
+					type: 'string',
+					value: annotation.sectionProperties.data.author
+				},
 				Text: {
 					type: 'string',
 					value: annotation.sectionProperties.data.text
 				}
 			};
-			this.map.sendUnoCommand('.uno:EditAnnotation', comment);
+			this.map.sendUnoCommand('.uno:EditAnnotation', comment, true /* force */);
 		}
 		this.unselect();
 		this.map.focus();
 	}
 
 	public reply (annotation: any): void {
-		if ((<any>window).mode.isMobile() || (<any>window).mode.isTablet()) {
+		if ((<any>window).mode.isMobile()) {
 			var avatar = undefined;
 			var author = this.map.getViewName(this.sectionProperties.docLayer._viewId);
 			if (author in this.map._viewInfoByUserName) {
@@ -549,7 +546,7 @@ export class CommentSection extends CanvasSectionObject {
 			}
 
 			if (this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing') {
-				this.newAnnotationVex(annotation, annotation.onReplyClick, /* isMod */ false);
+				this.newAnnotationMobile(annotation, annotation.onReplyClick, /* isMod */ false);
 			}
 			else {
 				var replyAnnotation = {
@@ -566,7 +563,7 @@ export class CommentSection extends CanvasSectionObject {
 				var replyAnnotationSection = new cool.Comment(replyAnnotation, replyAnnotation.id === 'new' ? {noMenu: true} : {}, this);
 				replyAnnotationSection.name += '-reply';
 
-				this.newAnnotationVex(replyAnnotationSection, annotation.onReplyClick, /* isMod */ false);
+				this.newAnnotationMobile(replyAnnotationSection, annotation.onReplyClick, /* isMod */ false);
 			}
 		}
 		else {
@@ -574,29 +571,47 @@ export class CommentSection extends CanvasSectionObject {
 			annotation.reply();
 			this.select(annotation);
 			annotation.focus();
-			if (this.isCollapsed)
-				this.map.fire('mobilewizardpopupresize');
 		}
 	}
 
 	public modify (annotation: any): void {
-		var newAnnotationInCollapsedMode = this.isCollapsed && annotation.isCollapsed;
-		if ((<any>window).mode.isMobile() || (<any>window).mode.isTablet() || newAnnotationInCollapsedMode) {
-			this.newAnnotationVex(annotation, function(annotation: any) {
+		if ((<any>window).mode.isMobile()) {
+			this.newAnnotationMobile(annotation, function(annotation: any) {
 				this.save(annotation);
 			}.bind(this), /* isMod */ true);
-		} else {
-			this.unselect();
+		}
+		else {
+			if (this.sectionProperties.docLayer._docType !== 'spreadsheet')
+				this.unselect();
+
 			annotation.edit();
 			this.select(annotation);
 			annotation.focus();
-			if (this.isCollapsed)
-				this.map.fire('mobilewizardpopupresize');
 		}
+	}
+
+	private showCollapsedReplies(rootIndex: number, rootId: number) {
+		var lastChild = this.getLastChildIndexOf(rootId);
+
+		for (var i = lastChild; i > rootIndex; i--) {
+			this.sectionProperties.commentList[i].sectionProperties.container.style.display = '';
+			this.sectionProperties.commentList[i].sectionProperties.container.style.visibility = '';
+		}
+	}
+
+	private collapseReplies(rootIndex: number, rootId: number) {
+		var lastChild = this.getLastChildIndexOf(rootId);
+
+		for (var i = lastChild; i > rootIndex; i--)
+			this.sectionProperties.commentList[i].sectionProperties.container.style.display = 'none';
 	}
 
 	public select (annotation: any): void {
 		if (annotation && annotation !== this.sectionProperties.selectedComment) {
+			// Unselect first if there anything selected.
+			if (this.sectionProperties.selectedComment)
+				this.unselect();
+
 			// Select the root comment
 			var idx = this.getRootIndexOf(annotation.sectionProperties.data.id);
 
@@ -617,10 +632,13 @@ export class CommentSection extends CanvasSectionObject {
 				}
 			}
 
-			this.update();
+			if (this.isCollapsed) {
+				this.showCollapsedReplies(idx, annotation.sectionProperties.data.id);
+				if (this.sectionProperties.docLayer._docType === 'text')
+					this.sectionProperties.selectedComment.sectionProperties.replyCountNode.style.display = 'none';
+			}
 
-			if (!(<any>window).mode.isMobile() && annotation.isCollapsed && this.sectionProperties.docLayer._docType !== 'spreadsheet')
-				this.openMobileWizardPopup(annotation);
+			this.update();
 		}
 	}
 
@@ -647,6 +665,10 @@ export class CommentSection extends CanvasSectionObject {
 			if (this.sectionProperties.docLayer._docType === 'spreadsheet')
 				this.sectionProperties.selectedComment.hide();
 
+			if (this.sectionProperties.commentsAreListed && this.isCollapsed) {
+				this.sectionProperties.selectedComment.setCollapsed();
+				this.collapseReplies(this.getRootIndexOf(this.sectionProperties.selectedComment.sectionProperties.data.id), this.sectionProperties.selectedComment.sectionProperties.data.id);
+			}
 			this.sectionProperties.selectedComment = null;
 
 			this.update();
@@ -873,14 +895,6 @@ export class CommentSection extends CanvasSectionObject {
 		this.containerObject.requestReDraw();
 	}
 
-	public onDraw (): void {
-		return;
-	}
-
-	public onMouseMove (point: Array<number>, dragDistance: Array<number>, e: MouseEvent): void {
-		return;
-	}
-
 	public onNewDocumentTopLeft (): void {
 		if (this.sectionProperties.docLayer._docType === 'spreadsheet') {
 			if (this.sectionProperties.selectedComment)
@@ -952,7 +966,7 @@ export class CommentSection extends CanvasSectionObject {
 		this.orderCommentList();
 		this.checkSize();
 
-		if (this.isCollapsed)
+		if (this.isCollapsed && comment.id !== 'new')
 			annotation.setCollapsed();
 
 		// check if we are the author
@@ -1067,12 +1081,6 @@ export class CommentSection extends CanvasSectionObject {
 				this.map.focus();
 			}
 			annotation = this.sectionProperties.commentList[this.getRootIndexOf(obj[dataroot].id)];
-			if (!(<any>window).mode.isMobile()) {
-				this.update();
-				var newAnnotation = this.sectionProperties.commentList[this.getIndexOf(obj[dataroot].id)];
-				if (newAnnotation.sectionProperties.data.parent !== '0' && this.isCollapsed)
-					this.openMobileWizardPopup(annotation);
-			}
 		} else if (action === 'Remove') {
 			if ((<any>window).mode.isMobile() && obj[dataroot].id === annotation.sectionProperties.data.id) {
 				var child = this.sectionProperties.commentList[this.getIndexOf(obj[dataroot].id) + 1];
@@ -1084,16 +1092,13 @@ export class CommentSection extends CanvasSectionObject {
 			id = obj[dataroot].id;
 			var removed = this.getComment(id);
 			if (removed) {
-				var parent = this.sectionProperties.commentList[this.getRootIndexOf(removed.sectionProperties.data.id)];
 				this.adjustParentRemove(removed);
 				this.removeItem(id);
 				if (this.sectionProperties.selectedComment === removed) {
 					this.unselect();
-				} else {
-					this.update();
 				}
-				if (!(<any>window).mode.isMobile() && this.isCollapsed) {
-					this.openMobileWizardPopup(parent);
+				else {
+					this.update();
 				}
 			}
 		} else if (action === 'Modify') {
@@ -1114,10 +1119,6 @@ export class CommentSection extends CanvasSectionObject {
 				modified.setData(modifiedObj);
 				modified.update();
 				this.update();
-				if (!(<any>window).mode.isMobile() && this.isCollapsed && this.sectionProperties.selectedComment) {
-					var parent = this.sectionProperties.commentList[this.getRootIndexOf(modified.sectionProperties.data.id)];
-					this.openMobileWizardPopup(parent);
-				}
 			}
 		} else if (action === 'Resolve') {
 			id = obj[dataroot].id;
@@ -1139,9 +1140,6 @@ export class CommentSection extends CanvasSectionObject {
 				resolved.update();
 				this.showHideComment(resolved);
 				this.update();
-				if (!(<any>window).mode.isMobile() && this.isCollapsed) {
-					this.openMobileWizardPopup(parent);
-				}
 			}
 		}
 		if ((<any>window).mode.isMobile()) {
@@ -1160,14 +1158,7 @@ export class CommentSection extends CanvasSectionObject {
 	public selectById (commentId: any): void {
 		var idx = this.getRootIndexOf(commentId);
 		var annotation = this.sectionProperties.commentList[idx];
-		var justOpened = annotation !== this.sectionProperties.selectedComment;
-		this.sectionProperties.selectedComment = annotation;
-		this.update();
-
-		if (justOpened && !(<any>window).mode.isMobile() && annotation.isCollapsed &&
-			this.sectionProperties.docLayer._docType !== 'spreadsheet') {
-			this.openMobileWizardPopup(annotation);
-		}
+		this.select(annotation);
 	}
 
 	public stringToRectangles (str: string): number[][] {
@@ -1318,65 +1309,6 @@ export class CommentSection extends CanvasSectionObject {
 		return index;
 	}
 
-	private updateScaling (): void {
-		if ((<any>window).mode.isDesktop() || this.sectionProperties.commentList.length === 0)
-			return;
-
-		var contentWrapperClassName, menuClassName;
-		if (this.sectionProperties.commentList[0].sectionProperties.data.trackchange) {
-			contentWrapperClassName = '.cool-annotation-redline-content-wrapper';
-			menuClassName = '.cool-annotation-menu-redline';
-		} else {
-			contentWrapperClassName = '.cool-annotation-content-wrapper';
-			menuClassName = '.cool-annotation-menu';
-		}
-
-		var initNeeded = (this.sectionProperties.initialLayoutData === null);
-		var contentWrapperClass = $(contentWrapperClassName);
-
-		if (initNeeded) {
-			var contentAuthor = $('.cool-annotation-content-author');
-			var dateClass = $('.cool-annotation-date');
-
-			this.sectionProperties.initialLayoutData = {
-				wrapperWidth: parseInt(contentWrapperClass.css('width')),
-				wrapperFontSize: parseInt(contentWrapperClass.css('font-size')),
-				authorContentHeight: parseInt(contentAuthor.css('height')),
-				dateFontSize: parseInt(dateClass.css('font-size')),
-			};
-		}
-
-		var menuClass = $(menuClassName);
-		if ((this.sectionProperties.initialLayoutData.menuWidth === undefined) && menuClass.length > 0) {
-			this.sectionProperties.initialLayoutData.menuWidth = parseInt(menuClass.css('width'));
-			this.sectionProperties.initialLayoutData.menuHeight = parseInt(menuClass.css('height'));
-		}
-
-		var scaleFactor = this.getScaleFactor();
-		var idx;
-		if (this.sectionProperties.selectedComment) {
-			var selectIndexFirst = this.getRootIndexOf(this.sectionProperties.selectedComment.sectionProperties.data.id);
-			var selectIndexLast = this.getLastChildIndexOf(this.sectionProperties.selectedComment.sectionProperties.data.id);
-			for (idx = 0; idx < this.sectionProperties.commentList.length; idx++) {
-				if (idx < selectIndexFirst || idx >  selectIndexLast) {
-					this.sectionProperties.commentList[idx].updateScaling(scaleFactor, this.sectionProperties.initialLayoutData);
-				}
-				else {
-					this.sectionProperties.commentList[idx].updateScaling(1, this.sectionProperties.initialLayoutData);
-				}
-			}
-		}
-		else {
-			for (idx = 0; idx < this.sectionProperties.commentList.length; idx++) {
-				this.sectionProperties.commentList[idx].updateScaling(scaleFactor, this.sectionProperties.initialLayoutData);
-			}
-		}
-	}
-
-	private twipsToCorePixels (twips: any): number[] {
-		return [twips.x / this.sectionProperties.docLayer._tileWidthTwips * this.sectionProperties.docLayer._tileSize, twips.y / this.sectionProperties.docLayer._tileHeightTwips * this.sectionProperties.docLayer._tileSize];
-	}
-
 	// If the file type is presentation or drawing then we shall check the selected part in order to hide comments from other parts.
 	// But if file is in fileBasedView, then we will not hide any comments from not-selected/viewed parts.
 	private mustCheckSelectedPart (): boolean {
@@ -1432,8 +1364,8 @@ export class CommentSection extends CanvasSectionObject {
 
 			var isRTL = document.documentElement.dir === 'rtl';
 
-			if (selectedComment && !this.sectionProperties.selectedComment.isCollapsed)
-				(new L.PosAnimation()).run(subList[i].sectionProperties.container, {x: Math.round(actualPosition[0] / app.dpiScale) - 60 * (isRTL ? -1 : 1), y: Math.round(lastY / app.dpiScale)});
+			if (selectedComment)
+				(new L.PosAnimation()).run(subList[i].sectionProperties.container, {x: Math.round(actualPosition[0] / app.dpiScale) - this.sectionProperties.deflectionOfSelectedComment * (isRTL ? -1 : 1), y: Math.round(lastY / app.dpiScale)});
 			else
 				(new L.PosAnimation()).run(subList[i].sectionProperties.container, {x: Math.round(actualPosition[0] / app.dpiScale), y: Math.round(lastY / app.dpiScale)});
 
@@ -1532,18 +1464,15 @@ export class CommentSection extends CanvasSectionObject {
 		if (this.sectionProperties.commentList.length > 0) {
 			this.orderCommentList();
 
-			this.updateScaling();
-
 			var isRTL = document.documentElement.dir === 'rtl';
 
 			var topRight: Array<number> = [this.myTopLeft[0], this.myTopLeft[1] + this.sectionProperties.marginY - this.documentTopLeft[1]];
 			var yOrigin = null;
 			var selectedIndex = null;
 			var x = isRTL ? 0 : topRight[0];
-			var commentWidth = this.isCollapsed ? 70 : 300;
-			var availableSpace = this.containerObject.getDocumentAnchorSection().size[0] - app.file.size.pixels[0];
+			var availableSpace = this.calculateAvailableSpace();
 
-			if (availableSpace > commentWidth) {
+			if (availableSpace > this.sectionProperties.commentWidth) {
 				if (isRTL)
 					x = Math.round((this.containerObject.getDocumentAnchorSection().size[0] - app.file.size.pixels[0]) * 0.5) - this.containerObject.getDocumentAnchorSection().size[0];
 				else
@@ -1551,7 +1480,7 @@ export class CommentSection extends CanvasSectionObject {
 			} else if (isRTL)
 				x = -this.containerObject.getDocumentAnchorSection().size[0];
 			else
-				x -= commentWidth;
+				x -= this.sectionProperties.collapsedMarginToTheEdge;
 
 			if (this.sectionProperties.selectedComment) {
 				selectedIndex = this.getRootIndexOf(this.sectionProperties.selectedComment.sectionProperties.data.id);
@@ -1599,23 +1528,9 @@ export class CommentSection extends CanvasSectionObject {
 	}
 
 	private update (): void {
-		this.updateReplyCount();
+		if (this.sectionProperties.docLayer._docType === 'text')
+			this.updateReplyCount();
 		this.layout();
-	}
-
-	private openMobileWizardPopup (annotation: any): void {
-		if (!annotation) {
-			this.map.fire('mobilewizardpopupclose');
-			return;
-		}
-
-		var commentsData = this.map._docLayer.getCommentWizardStructure(undefined, annotation); // thread only
-		if (commentsData.children.length && commentsData.children[0].id !== 'emptyWizard') {
-			commentsData.popupParent = annotation.sectionProperties.container.id;
-			this.map.fire('mobilewizardpopup', {data: commentsData});
-		} else {
-			this.map.fire('mobilewizardpopupclose');
-		}
 	}
 
 	private updateReplyCount(): void {
@@ -1630,13 +1545,10 @@ export class CommentSection extends CanvasSectionObject {
 					replyCount++;
 			}
 
-			if (replyCount > 1) {
+			if (replyCount > 1)
 				comment.sectionProperties.replyCountNode.innerText = replyCount;
-				comment.sectionProperties.replyCountNode.style.display = '';
-			} else {
+			else
 				comment.sectionProperties.replyCountNode.innerText = '';
-				comment.sectionProperties.replyCountNode.style.display = 'none';
-			}
 		}
 	}
 
@@ -1747,6 +1659,9 @@ export class CommentSection extends CanvasSectionObject {
 
 		if (this.sectionProperties.docLayer._docType === 'spreadsheet')
 			this.hideAllComments(); // Apply drawing orders.
+
+		if (!(<any>window).mode.isMobile() && (this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing'))
+			this.showHideComments();
 	}
 
 	// Accepts redlines/changes comments.

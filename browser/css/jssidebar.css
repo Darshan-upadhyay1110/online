@@ -16,7 +16,14 @@ img.sidebar.ui-image {
 }
 
 .sidebar .ui-content .unobutton {
+	box-sizing: border-box;
 	margin: 0;
+	padding: 0;
+}
+
+.sidebar .unobutton > img {
+	width: var(--btn-size);
+	height: var(--btn-size);
 }
 
 #document-container:not(.mobile) + #sidebar-dock-wrapper {
@@ -28,8 +35,8 @@ img.sidebar.ui-image {
 	border-inline-start: 1px solid var(--color-border);
 }
 .sidebar .menu-entry-icon {
-	width: 24px;
-	height: 24px;
+	width: var(--btn-size);
+	height: var(--btn-size);
 }
 
 
@@ -205,6 +212,9 @@ div.sidebar.ui-grid .checkbutton.sidebar,
 .sidebar.unotoolbutton {
 	border: 1px solid transparent;
 	margin-right: 5px;
+}
+.sidebar.unotoolbutton.has-dropdown {
+	display: flex;
 }
 .sidebar.jsdialog.checkbutton {
 	font-size: var(--default-font-size);

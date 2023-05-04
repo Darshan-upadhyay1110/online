@@ -280,7 +280,7 @@ public:
     virtual void setInteractive(bool value);
 
     /// If not yet locked, try to lock
-    bool attemptLock(const ClientSession& session, std::string& failReason);
+    bool attemptLock(ClientSession& session, std::string& failReason);
 
     bool isDocumentChangedInStorage() { return _documentChangedInStorage; }
 
@@ -290,8 +290,8 @@ public:
 
     /// Handle the save response from Core and upload to storage as necessary.
     /// Also notifies clients of the result.
-    void handleSaveResponse(const std::shared_ptr<ClientSession>& session, bool success,
-                            const std::string& result);
+    void handleSaveResponse(const std::shared_ptr<ClientSession>& session,
+                            const Poco::JSON::Object::Ptr& json);
 
     /// Check if uploading is needed, and start uploading.
     /// The current state of uploading must be introspected separately.
@@ -452,10 +452,9 @@ public:
             _lastEditingSessionId = viewId;
     }
 
-    /// Sends the .uno:Save command to LoKit.
-    bool sendUnoSave(const std::shared_ptr<ClientSession>& session, bool dontTerminateEdit = true,
-                     bool dontSaveIfUnmodified = true, bool isAutosave = false,
-                     const std::string& extendedData = std::string());
+    /// User wants to issue a save on the document.
+    bool manualSave(const std::shared_ptr<ClientSession>& session, bool dontTerminateEdit,
+                    bool dontSaveIfUnmodified, const std::string& extendedData);
 
     /// Sends a message to all sessions.
     /// Returns the number of sessions sent the message to.
@@ -504,9 +503,6 @@ private:
     /// Note that if there is no loaded and writable session, the first will be returned.
     std::shared_ptr<ClientSession> getWriteableSession() const;
 
-    /// Return the SessionId of the first writable session.
-    std::string getWriteableSessionId() const;
-
     void refreshLock();
 
     /// Loads a document from the public URI into the jail.
@@ -514,13 +510,15 @@ private:
     bool isLoaded() const { return _docState.hadLoaded(); }
     bool isInteractive() const { return _docState.isInteractive(); }
 
+    /// Updates the document's lock in storage to either locked or unlocked.
+    /// Returns true iff the operation was successful.
+    bool updateStorageLockState(ClientSession& session, bool lock, std::string& error);
+
     std::size_t getIdleTimeSecs() const
     {
         const auto duration = (std::chrono::steady_clock::now() - _lastActivityTime);
         return std::chrono::duration_cast<std::chrono::seconds>(duration).count();
     }
-
-    std::unique_lock<std::mutex> getDeferredLock() { return std::unique_lock<std::mutex>(_mutex, std::defer_lock); }
 
     void handleTileResponse(const std::shared_ptr<Message>& message);
     void handleDialogPaintResponse(const std::vector<char>& payload, bool child);
@@ -564,7 +562,7 @@ private:
             return CanSave::NotLoaded;
         }
 
-        if (_sessions.empty() || getWriteableSessionId().empty())
+        if (_sessions.empty() || !getWriteableSession())
         {
             return CanSave::NoWriteSession;
         }
@@ -588,11 +586,9 @@ private:
     }
 
     /// Encodes whether or not uploading is needed.
-    STATE_ENUM(
-        NeedToUpload,
-        No, //< No need to upload, data up-to-date.
-        Yes, //< Data is out of date.
-        Force //< Force uploading, typically because always_save_on_exit is set.
+    STATE_ENUM(NeedToUpload,
+               No, //< No need to upload, data up-to-date.
+               Yes, //< Data is out of date.
     );
 
     /// Returns the state of the need to upload.
@@ -610,6 +606,11 @@ private:
 
     /// Handles the completion of uploading to storage, both success and failure cases.
     void handleUploadToStorageResponse(const StorageBase::UploadResult& uploadResult);
+
+    /// Sends the .uno:Save command to LoKit.
+    bool sendUnoSave(const std::shared_ptr<ClientSession>& session, bool dontTerminateEdit = true,
+                     bool dontSaveIfUnmodified = true, bool isAutosave = false,
+                     const std::string& extendedData = std::string());
 
     /**
      * Report back the save result to PostMessage users (Action_Save_Resp)
@@ -643,7 +644,6 @@ private:
                Maybe, //< We have activity post saving.
                Yes_Modified, //< Data is out of date.
                Yes_LastSaveFailed, //< Yes, need to produce file on disk.
-               Force //< Force saving, typically because the user requested.
     );
 
     /// Returns the state of the need to save.
@@ -772,12 +772,12 @@ private:
         /// Checks whether or not we can issue a new request now.
         /// Returns true iff there is no active request and sufficient
         /// time has elapsed since the last request, including that
-        /// more time than the last request's duration has passed.
+        /// more time than half the last request's duration has passed.
         bool canRequestNow() const
         {
             const auto now = RequestManager::now();
             return !isActive() && std::min(timeSinceLastRequest(now), timeSinceLastResponse(now)) >=
-                                      std::max(_minTimeBetweenRequests, _lastRequestDuration);
+                                      std::max(_minTimeBetweenRequests, _lastRequestDuration / 2);
         }
 
         /// Sets the last request's result, either to success or failure.
@@ -912,7 +912,7 @@ private:
             }
         }
 
-        /// Marks the last save request as now.
+        /// Marks the last save request time as now.
         void markLastSaveRequestTime() { _request.markLastRequestTime(); }
 
         /// Returns whether the last save was successful or not.
@@ -998,7 +998,7 @@ private:
         /// True if we aren't saving and the minimum time since last save has elapsed.
         bool canSaveNow() const { return _request.canRequestNow(); }
 
-        void dumpState(std::ostream& os, const std::string& indent = "\n  ")
+        void dumpState(std::ostream& os, const std::string& indent = "\n  ") const
         {
             const auto now = std::chrono::steady_clock::now();
             os << indent << "isSaving now: " << std::boolalpha << isSaving();
@@ -1123,6 +1123,9 @@ private:
         /// True iff an upload is in progress (requested but not completed).
         bool isUploading() const { return _request.isActive(); }
 
+        /// Marks the last upload request time as now.
+        void markLastUploadRequestTime() { _request.markLastRequestTime(); }
+
         /// The duration elapsed since we sent the last upload request to storage.
         std::chrono::milliseconds timeSinceLastUploadRequest() const
         {
@@ -1171,7 +1174,7 @@ private:
         /// True if we aren't uploading and the minimum time since last upload has elapsed.
         bool canUploadNow() const { return _request.canRequestNow(); }
 
-        void dumpState(std::ostream& os, const std::string& indent = "\n  ")
+        void dumpState(std::ostream& os, const std::string& indent = "\n  ") const
         {
             const auto now = std::chrono::steady_clock::now();
             os << indent << "isUploading now: " << std::boolalpha << isUploading();
@@ -1311,7 +1314,7 @@ private:
         void setDisconnected() { _disconnected = true; }
         bool isDisconnected() const { return _disconnected; }
 
-        void dumpState(std::ostream& os, const std::string& indent = "\n  ")
+        void dumpState(std::ostream& os, const std::string& indent = "\n  ") const
         {
             os << indent << "doc state: " << toString(status());
             os << indent << "doc activity: " << toString(activity());
@@ -1394,13 +1397,15 @@ private:
 
     std::unique_ptr<StorageBase> _storage;
 
-    /// The current upload request's attributes. Re-used to retry after failure.
-    /// Updated right before uploading.
-    StorageBase::Attributes _currentStorageAttrs;
-    /// The next upload request's attributes. Avoids clobbering
-    /// _currentStorageAttrs until the current request succeeds.
-    /// Updated right before saving.
+    /// The next upload request's attributes, used during uno:Save only.
+    /// Updated right before saving and when saving is completed.
     StorageBase::Attributes _nextStorageAttrs;
+    /// The current upload request's attributes.
+    /// Updated after saving and merged with 'last' when upload fails.
+    StorageBase::Attributes _currentStorageAttrs;
+    /// The last upload request's attributes. Re-used to retry after failure.
+    /// Updated right before uploading.
+    StorageBase::Attributes _lastStorageAttrs;
 
     std::unique_ptr<TileCache> _tileCache;
     std::atomic<bool> _isModified;
@@ -1479,7 +1484,7 @@ public:
     static void removeFile(const std::string &uri);
 };
 
-class ConvertToBroker final : public StatelessBatchBroker
+class ConvertToBroker : public StatelessBatchBroker
 {
     const std::string _format;
     const std::string _sOptions;
@@ -1510,8 +1515,52 @@ public:
     /// How many live conversions are running.
     static std::size_t getInstanceCount();
 
-private:
+protected:
     bool isConvertTo() const override { return true; }
+
+    virtual bool isGetThumbnail() const { return false; }
+
+    virtual void sendStartMessage(const std::shared_ptr<ClientSession>& clientSession,
+                                  const std::string& encodedFrom);
+};
+
+class ExtractLinkTargetsBroker final : public ConvertToBroker
+{
+public:
+    /// Construct DocumentBroker with URI and docKey
+    ExtractLinkTargetsBroker(const std::string& uri,
+                    const Poco::URI& uriPublic,
+                    const std::string& docKey,
+                    const std::string& lang)
+                    : ConvertToBroker(uri, uriPublic, docKey, "", "", lang)
+                    {}
+
+private:
+    void sendStartMessage(const std::shared_ptr<ClientSession>& clientSession,
+                          const std::string& encodedFrom) override;
+};
+
+class GetThumbnailBroker final : public ConvertToBroker
+{
+    std::string _target;
+
+public:
+    /// Construct DocumentBroker with URI and docKey
+    GetThumbnailBroker(const std::string& uri,
+                    const Poco::URI& uriPublic,
+                    const std::string& docKey,
+                    const std::string& lang,
+                    const std::string& target)
+                    : ConvertToBroker(uri, uriPublic, docKey, std::string(), std::string(), lang)
+                    , _target(target)
+                    {}
+
+protected:
+    bool isGetThumbnail() const override { return true; }
+
+private:
+    void sendStartMessage(const std::shared_ptr<ClientSession>& clientSession,
+                          const std::string& encodedFrom) override;
 };
 
 class RenderSearchResultBroker final : public StatelessBatchBroker

@@ -38,6 +38,7 @@ L.Control.Zotero = L.Control.extend({
 	onAdd: function (map) {
 		this.map = map;
 		this.enable = false;
+		this.fetchStyle();
 	},
 
 	extractItemKeyFromLink: function(link) {
@@ -128,17 +129,26 @@ L.Control.Zotero = L.Control.extend({
 			this.map.uiManager.showSnackbar(_('Zotero API key is not configured'));
 	},
 
+	refreshUI: function () {
+		if (this.map.uiManager.notebookbar)
+			this.map.uiManager.refreshNotebookbar();
+		else
+			this.map.uiManager.refreshMenubar();
+	},
+
 	updateUserID: function () {
+		if (this.apiKey === '') {
+			this.refreshUI();
+			return;
+		}
+
 		var that = this;
 		fetch('https://api.zotero.org/keys/' + this.apiKey)
 			.then(function (response) { return response.json(); })
 			.then(function (data) {
 				that.userID = data.userID;
 				that.enable = !!that.userID;
-				if (that.map.uiManager.notebookbar)
-					that.map.uiManager.refreshNotebookbar();
-				else
-					that.map.uiManager.refreshMenubar();
+				that.refreshUI();
 				that.updateGroupIdList();
 			}, function () { that.map.uiManager.showSnackbar(_('Zotero API key is incorrect')); });
 	},
@@ -1275,6 +1285,9 @@ L.Control.Zotero = L.Control.extend({
 		if (!(this.citations && Object.keys(this.citations)))
 			return;
 
+		if (this.getCitationKeys().length === 0)
+			return;
+
 		var that = this;
 
 		if (this.settings.citationFormat === 'numeric') {
@@ -1412,9 +1425,9 @@ L.Control.Zotero = L.Control.extend({
 					'value': 'ZOTERO_BIBL'
 				}
 			};
-			this.map.sendUnoCommand('.uno:DeleteSections', sectionUnlinkParameter);
+			this.map.sendUnoCommand('.uno:DeleteSections', sectionUnlinkParameter, true);
 		}
-		this.map.sendUnoCommand(command, parametes);
+		this.map.sendUnoCommand(command, parametes, true);
 		this.resetCitation();
 		this.map.uiManager.showSnackbar('Unlinked citations');
 	},
@@ -1519,7 +1532,7 @@ L.Control.Zotero = L.Control.extend({
 		}
 
 		delete this.insertNewCitation;
-		this.map.sendUnoCommand(command, parameters);
+		this.map.sendUnoCommand(command, parameters, true);
 		this.updateFieldsList();
 	},
 
@@ -1541,7 +1554,7 @@ L.Control.Zotero = L.Control.extend({
 					'value': newValueArray
 				}
 			};
-			this.map.sendUnoCommand('.uno:TextFormFields', updatedCitations);
+			this.map.sendUnoCommand('.uno:TextFormFields', updatedCitations, true);
 		} else if (this.getFieldType() === 'ReferenceMark') {
 			updatedCitations = {
 				'TypeName': {
@@ -1557,7 +1570,7 @@ L.Control.Zotero = L.Control.extend({
 					'value': newValueArray
 				}
 			};
-			this.map.sendUnoCommand('.uno:UpdateFields', updatedCitations);
+			this.map.sendUnoCommand('.uno:UpdateFields', updatedCitations, true);
 		} else if (this.getFieldType() === 'Bookmark') {
 			updatedCitations = {
 				'BookmarkNamePrefix': {
@@ -1573,7 +1586,7 @@ L.Control.Zotero = L.Control.extend({
 			newValueArray.forEach(function(value) {
 				that.setCustomProperty(value.parameter['Bookmark'].value + '_', 'ZOTERO_ITEM CSL_CITATION ' + value.cslJSON);
 			});
-			this.map.sendUnoCommand('.uno:UpdateBookmarks', updatedCitations);
+			this.map.sendUnoCommand('.uno:UpdateBookmarks', updatedCitations, true);
 		}
 
 		this.updateFieldsList();
@@ -1756,7 +1769,7 @@ L.Control.Zotero = L.Control.extend({
 			}
 		}
 
-		this.map.sendUnoCommand(command, parameters);
+		this.map.sendUnoCommand(command, parameters, true);
 	},
 
 	setCustomProperty: function(prefix, string) {
@@ -1787,7 +1800,7 @@ L.Control.Zotero = L.Control.extend({
 			};
 
 		}
-		this.map.sendUnoCommand('.uno:SetDocumentProperties', property);
+		this.map.sendUnoCommand('.uno:SetDocumentProperties', property, true);
 	},
 
 	handleCustomProperty: function(userDefinedProperties) {

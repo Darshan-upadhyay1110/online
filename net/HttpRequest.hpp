@@ -633,7 +633,7 @@ public:
                     LOG_TRC("performWrites (request body): finished, total: " << out.size() -
                                                                                      buffered_size);
                     _stage = Stage::Finished;
-                    return true;
+                    break;
                 }
 
                 out.append(buffer, read);
@@ -642,6 +642,11 @@ public:
                                                          << out.size() - buffered_size);
             } while (wrote < capacity);
         }
+
+#ifdef DEBUG_HTTP
+        LOG_TRC("Request::writeData: " << buffered_size << " bytes buffered\n"
+                                       << Util::dumpHex(out));
+#endif //DEBUG_HTTP
 
         return true;
     }
@@ -763,11 +768,12 @@ public:
 
     /// A response received from a server.
     /// Used for parsing an incoming response.
-    Response(FinishedCallback finishedCallback)
+    explicit Response(FinishedCallback finishedCallback, int fd = -1)
         : _state(State::New)
         , _parserStage(ParserStage::StatusLine)
         , _recvBodySize(0)
         , _finishedCallback(std::move(finishedCallback))
+        , _fd(fd)
     {
         // By default we store the body in memory.
         saveBodyToMemory();
@@ -782,8 +788,9 @@ public:
 
     /// A response sent from a server.
     /// Used for generating an outgoing response.
-    Response(StatusLine statusLineObj)
+    explicit Response(StatusLine statusLineObj, int fd = -1)
         : _statusLine(std::move(statusLineObj))
+        , _fd(fd)
     {
         _header.add("Date", Util::getHttpTimeNow());
         _header.add("Server", HTTP_SERVER_STRING);
@@ -791,8 +798,8 @@ public:
 
     /// A response sent from a server.
     /// Used for generating an outgoing response.
-    Response(StatusCode statusCode)
-        : Response(StatusLine(statusCode))
+    explicit Response(StatusCode statusCode, int fd = -1)
+        : Response(StatusLine(statusCode), fd)
     {
     }
 
@@ -839,7 +846,7 @@ public:
         _bodyFile.open(path, std::ios_base::out | std::ios_base::binary);
         _onBodyWriteCb = [this](const char* p, int64_t len)
         {
-            LOG_TRC("Writing " << len << " bytes.");
+            LOG_TRC("Writing " << len << " bytes");
             if (_bodyFile.good())
                 _bodyFile.write(p, len);
             return _bodyFile.good() ? len : -1;
@@ -919,10 +926,16 @@ public:
     {
         // We expect to have completed successfully, or timed out,
         // anything else means we didn't get complete data.
+        LOG_TRC("State::Error");
         finish(State::Error);
     }
 
+    /// Sets the context used by logPrefix.
+    void setLogContext(int fd) { _fd = fd; }
+
 private:
+    inline void logPrefix(std::ostream& os) const { os << '#' << _fd << ": "; }
+
     void finish(State newState)
     {
         if (!done())
@@ -947,6 +960,7 @@ private:
     std::ofstream _bodyFile; //< Used when _bodyHandling is OnDisk.
     IoWriteFunc _onBodyWriteCb; //< Used to handling body receipt in all cases.
     FinishedCallback _finishedCallback; //< Called when response is finished.
+    int _fd; //< The socket file-descriptor.
 };
 
 /// A client socket to make asynchronous HTTP requests.
@@ -963,6 +977,7 @@ private:
         : _host(std::move(hostname))
         , _port(std::to_string(portNumber))
         , _protocol(protocolType)
+        , _fd(-1)
         , _timeout(getDefaultTimeout())
         , _connected(false)
     {
@@ -1019,7 +1034,7 @@ public:
         std::string portString;
         if (!net::parseUri(uri, scheme, hostname, portString))
         {
-            LOG_ERR("Invalid URI [" << uri << "] to http::Session::create.");
+            LOG_ERR_S("Invalid URI [" << uri << "] to http::Session::create");
             return nullptr;
         }
 
@@ -1033,8 +1048,8 @@ public:
         if (portPair.second && portPair.first > 0)
             return create(hostname, protocol, portPair.first);
 
-        LOG_ERR("Invalid port [" << portString << "] in URI [" << uri
-                                 << "] to http::Session::create.");
+        LOG_ERR_S("Invalid port [" << portString << "] in URI [" << uri
+                                   << "] to http::Session::create");
         return nullptr;
     }
 
@@ -1091,8 +1106,8 @@ public:
     const std::shared_ptr<const Response>
     syncDownload(const Request& req, const std::string& saveToFilePath, SocketPoll& poller)
     {
-        LOG_TRC("syncDownload: " << req.getVerb() << ' ' << host() << ':' << port() << ' '
-                                 << req.getUrl());
+        LOG_TRC_S("syncDownload: " << req.getVerb() << ' ' << host() << ':' << port() << ' '
+                                   << req.getUrl());
 
         newRequest(req);
 
@@ -1116,8 +1131,8 @@ public:
     /// The payload body of the response, if any, can be read via getBody().
     const std::shared_ptr<const Response> syncRequest(const Request& req, SocketPoll& poller)
     {
-        LOG_TRC("syncRequest: " << req.getVerb() << ' ' << host() << ':' << port() << ' '
-                                << req.getUrl());
+        LOG_TRC_S("syncRequest: " << req.getVerb() << ' ' << host() << ':' << port() << ' '
+                                  << req.getUrl());
 
         newRequest(req);
         syncRequestImpl(poller);
@@ -1158,8 +1173,8 @@ public:
     /// use multiple SocketPoll instances on the same Session).
     bool asyncRequest(const Request& req, SocketPoll& poll)
     {
-        LOG_TRC("asyncRequest: " << req.getVerb() << ' ' << host() << ':' << port() << ' '
-                                 << req.getUrl());
+        LOG_TRC("new asyncRequest: " << req.getVerb() << ' ' << host() << ':' << port() << ' '
+                                     << req.getUrl());
 
         newRequest(req);
 
@@ -1175,7 +1190,7 @@ public:
             LOG_ASSERT_MSG(_socket.lock(), "Connect must set the _socket member.");
             LOG_ASSERT_MSG(_socket.lock()->getFD() == socket->getFD(),
                            "Socket FD's mismatch after connect().");
-            LOG_TRC('#' << socket->getFD() << ": inserting in poller after connecting");
+            LOG_TRC("Inserting in poller after connecting");
             poll.insertNewSocket(socket);
         }
         else
@@ -1185,6 +1200,9 @@ public:
             // In that case, we will timeout and no request will be sent.
             poll.wakeup();
         }
+
+        LOG_DBG("starting asyncRequest: " << req.getVerb() << ' ' << host() << ':' << port() << ' '
+                                          << req.getUrl());
 
         return true;
     }
@@ -1211,6 +1229,8 @@ public:
 
 
 private:
+    inline void logPrefix(std::ostream& os) const { os << '#' << _fd << ": "; }
+
     /// Make a synchronous request.
     bool syncRequestImpl(SocketPoll& poller)
     {
@@ -1230,6 +1250,9 @@ private:
 
             poller.insertNewSocket(socket);
         }
+
+        LOG_TRC("Starting syncRequest: " << _request.getVerb() << ' ' << host() << ':' << port()
+                                         << ' ' << _request.getUrl());
 
         poller.poll(timeout);
         while (!_response->done())
@@ -1280,7 +1303,7 @@ private:
         };
 
         _response.reset();
-        _response = std::make_shared<Response>(onFinished);
+        _response = std::make_shared<Response>(onFinished, _fd);
 
         _request = std::move(req);
 
@@ -1300,12 +1323,15 @@ private:
     {
         if (socket)
         {
-            LOG_TRC('#' << socket->getFD() << ": Connected");
+            _fd = socket->getFD();
+            _response->setLogContext(_fd);
+            LOG_TRC("Connected");
             _connected = true;
         }
         else
         {
             LOG_DBG("Error: onConnect without a valid socket");
+            _fd = -1;
             _connected = false;
         }
     }
@@ -1348,12 +1374,19 @@ private:
         }
 
         assert(socket && "No valid socket to handleIncomingMessage.");
-        LOG_TRC('#' << socket->getFD() << " handleIncomingMessage.");
 
-        bool close = false;
         Buffer& data = socket->getInBuffer();
+        if (data.empty())
+        {
+            LOG_DBG("No data to process from the socket");
+            return;
+        }
+
+        LOG_TRC("HandleIncomingMessage: buffer has:\n"
+                << Util::dumpHex(std::string(data.data(), std::min(data.size(), 256UL))));
 
         // Consume the incoming data by parsing and processing the body.
+        bool close = false;
         const int64_t read = _response->readData(data.data(), data.size());
         if (read > 0)
         {
@@ -1381,12 +1414,12 @@ private:
         if (socket)
         {
             Buffer& out = socket->getOutBuffer();
-            LOG_TRC('#' << socket->getFD() << ": performWrites: sending request (buffered: "
-                        << out.size() << " bytes, capacity: " << capacity << ')');
+            LOG_TRC("performWrites: sending request (buffered: "
+                    << out.size() << " bytes, capacity: " << capacity << ')');
 
             if (!socket->send(_request))
             {
-                LOG_ERR('#' << socket->getFD() << ": Error while writing to socket.");
+                LOG_ERR("Error while writing to socket");
             }
         }
     }
@@ -1397,7 +1430,7 @@ private:
         std::shared_ptr<StreamSocket> socket = _socket.lock();
         if (socket)
         {
-            LOG_TRC('#' << socket->getFD() << ": onDisconnect");
+            LOG_TRC("onDisconnect");
 
             socket->shutdown(); // Flag for shutdown for housekeeping in SocketPoll.
             socket->closeConnection(); // Immediately disconnect.
@@ -1407,6 +1440,8 @@ private:
         _connected = false;
         if (_response)
             _response->finish();
+
+        _fd = -1; // No longer our socket fd.
     }
 
     std::shared_ptr<StreamSocket> connect()
@@ -1414,6 +1449,7 @@ private:
         _socket.reset(); // Reset to make sure we are disconnected.
         std::shared_ptr<StreamSocket> socket =
             net::connect(_host, _port, isSecure(), shared_from_this());
+        assert(_fd == socket->getFD() && "The socket FD must have been set in onConnect");
 
         // When used with proxy.php we may indeed get nullptr here.
         // assert(socket && "Unexpected nullptr returned from net::connect");
@@ -1430,10 +1466,8 @@ private:
             std::chrono::duration_cast<std::chrono::milliseconds>(now - _startTime);
         if (now < _startTime || duration > getTimeout() || SigUtil::getTerminationFlag())
         {
-            std::shared_ptr<StreamSocket> socket = _socket.lock();
-            const int fd = socket ? socket->getFD() : 0;
-            LOG_WRN('#' << fd << " has timed out while requesting [" << _request.getVerb() << ' '
-                        << _host << _request.getUrl() << "] after " << duration);
+            LOG_WRN("Timed out while requesting [" << _request.getVerb() << ' ' << _host
+                                                   << _request.getUrl() << "] after " << duration);
 
             // Flag that we timed out.
             _response->timeout();
@@ -1453,6 +1487,7 @@ private:
     const std::string _host;
     const std::string _port;
     const Protocol _protocol;
+    int _fd; //< The socket file-descriptor.
     std::chrono::microseconds _timeout;
     std::chrono::steady_clock::time_point _startTime;
     bool _connected;
@@ -1574,12 +1609,13 @@ private:
         _socket = socket;
         if (socket)
         {
+            setLogContext(socket->getFD());
             if (_fd >= 0 || _pos >= 0)
             {
-                LOG_TRC('#' << socket->getFD() << " Connected");
+                LOG_TRC("Connected");
                 _connected = true;
 
-                LOG_DBG('#' << socket->getFD() << " Sending header with size " << _size);
+                LOG_DBG("Sending header with size " << _size);
                 http::Response httpResponse(http::StatusCode::OK);
                 httpResponse.set("Content-Length", std::to_string(_size));
                 httpResponse.set("Content-Type", _mimeType);
@@ -1591,7 +1627,7 @@ private:
                 return;
             }
 
-            LOG_DBG('#' << socket->getFD() << " Has no data to send back");
+            LOG_DBG("Has no data to send back");
             http::Response httpResponse(http::StatusCode::BadRequest);
             httpResponse.set("Content-Length", "0");
             socket->sendAndShutdown(httpResponse);
@@ -1630,7 +1666,6 @@ private:
 
     virtual void handleIncomingMessage(SocketDisposition& /*disposition*/) override
     {
-        // std::shared_ptr<StreamSocket> socket = _socket.lock();
         if (!isConnected())
         {
             LOG_ERR("handleIncomingMessage called when not connected.");
@@ -1639,7 +1674,7 @@ private:
         }
 
         assert(_socket && "No valid socket to handleIncomingMessage.");
-        LOG_TRC('#' << _socket->getFD() << " handleIncomingMessage.");
+        LOG_TRC("handleIncomingMessage");
     }
 
     void performWrites(std::size_t capacity) override
@@ -1648,8 +1683,7 @@ private:
         if (_socket)
         {
             const Buffer& out = _socket->getOutBuffer();
-            LOG_TRC('#' << _socket->getFD() << ": performWrites: " << out.size()
-                        << " bytes, capacity: " << capacity);
+            LOG_TRC("performWrites: " << out.size() << " bytes, capacity: " << capacity);
 
             while (_fd >= 0 && capacity > 0)
             {
@@ -1664,11 +1698,11 @@ private:
                 {
                     if (n == 0)
                     {
-                        LOG_TRC('#' << _socket->getFD() << ": performWrites finished uploading");
+                        LOG_TRC("performWrites finished uploading");
                     }
                     else
                     {
-                        LOG_SYS('#' << _socket->getFD() << ": failed to upload file");
+                        LOG_SYS("Failed to upload file");
                     }
 
                     close(_fd);
@@ -1680,8 +1714,7 @@ private:
                 _socket->send(buffer, n);
                 LOG_ASSERT(static_cast<std::size_t>(n) <= capacity);
                 capacity -= n;
-                LOG_TRC('#' << _socket->getFD() << ": performWrites wrote " << n
-                            << " bytes, capacity: " << capacity);
+                LOG_TRC("performWrites wrote " << n << " bytes, capacity: " << capacity);
             }
         }
     }
@@ -1691,7 +1724,7 @@ private:
         // Make sure the socket is disconnected and released.
         if (_socket)
         {
-            LOG_TRC('#' << _socket->getFD() << ": onDisconnect");
+            LOG_TRC("onDisconnect");
 
             _socket->shutdown(); // Flag for shutdown for housekeeping in SocketPoll.
             _socket->closeConnection(); // Immediately disconnect.

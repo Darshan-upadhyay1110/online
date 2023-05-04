@@ -268,10 +268,6 @@ void SocketPoll::joinThread()
 {
     if (isAlive())
     {
-        addCallback([this]()
-                    {
-                        removeSockets();
-                    });
         stop();
     }
 
@@ -285,6 +281,13 @@ void SocketPoll::joinThread()
             _threadStarted = 0;
         }
     }
+
+    if (_runOnClientThread)
+    {
+        removeSockets();
+    }
+
+    assert(_pollSockets.empty());
 }
 
 void SocketPoll::pollingThreadEntry()
@@ -300,8 +303,7 @@ void SocketPoll::pollingThreadEntry()
         pollingThread();
 
         // Release sockets.
-        _pollSockets.clear();
-        _newSockets.clear();
+        removeSockets();
     }
     catch (const std::exception& exc)
     {
@@ -358,33 +360,44 @@ int SocketPoll::poll(int64_t timeoutMaxMicroS)
             timeoutMaxMicroS << "us)" << ((rc==0) ? "(timedout)" : ""));
 
     // First process the wakeup pipe (always the last entry).
+    LOG_TRC('#' << _pollFds[size].fd << ": Handling events of wakeup pipe: 0x" << std::hex
+                << _pollFds[size].revents << std::dec);
     if (_pollFds[size].revents)
     {
+        // Clear the data.
+#if !MOBILEAPP
+        int dump[32];
+        dump[0] = ::read(_wakeup[0], &dump, sizeof(dump));
+        LOG_TRC("Wakup pipe read " << dump[0] << " bytes");
+#else
+        LOG_TRC("Wakeup pipe read");
+        int dump = fakeSocketRead(_wakeup[0], &dump, sizeof(dump));
+#endif
+
         std::vector<CallbackFn> invoke;
         {
             std::lock_guard<std::mutex> lock(_mutex);
 
-            // Clear the data.
-#if !MOBILEAPP
-            int dump = ::read(_wakeup[0], &dump, sizeof(dump));
-#else
-            LOG_TRC("Wakeup pipe read");
-            int dump = fakeSocketRead(_wakeup[0], &dump, sizeof(dump));
-#endif
-            // Copy the new sockets over and clear.
-            _pollSockets.insert(_pollSockets.end(),
-                                _newSockets.begin(), _newSockets.end());
+            if (!_newSockets.empty())
+            {
+                LOG_TRC("Inserting " << _newSockets.size() << " new sockets after the existing "
+                                     << _pollSockets.size());
 
-            // Update thread ownership.
-            for (auto &i : _newSockets)
-                i->setThreadOwner(std::this_thread::get_id());
+                // Update thread ownership.
+                for (auto& i : _newSockets)
+                    i->setThreadOwner(std::this_thread::get_id());
 
-            _newSockets.clear();
+                // Copy the new sockets over and clear.
+                _pollSockets.insert(_pollSockets.end(), _newSockets.begin(), _newSockets.end());
+
+                _newSockets.clear();
+            }
 
             // Extract list of callbacks to process
             std::swap(_newCallbacks, invoke);
         }
 
+        LOG_TRC("Invoking " << invoke.size() << " callbacks");
         for (const auto& callback : invoke)
         {
             try
@@ -409,73 +422,83 @@ int SocketPoll::poll(int64_t timeoutMaxMicroS)
         }
     }
 
-    // This should only happen when we're stopping.
-
-    // FIXME: A few dozen lines above we have potentially inserted new elements in _pollSockets, so
-    // clearly its size can now be larger than what it was when we came to this function, which got
-    // saved in the size variable.
-
     if (_pollSockets.size() != size)
-        return rc;
+    {
+        LOG_TRC("PollSocket container size has changed from " << size << " to "
+                                                              << _pollSockets.size());
+    }
 
-    // Fire the poll callbacks and remove dead fds.
-    std::chrono::steady_clock::time_point newNow =
-        std::chrono::steady_clock::now();
-
+    // If we had sockets to process.
     if (size > 0)
     {
+        assert(!_pollSockets.empty() && "All existing sockets disappeared from the SocketPoll");
+
+        // Fire the poll callbacks and remove dead fds.
+        std::chrono::steady_clock::time_point newNow = std::chrono::steady_clock::now();
+
         // We use the _pollStartIndex to start the polling at a different index each time. Do some
         // sanity check first to handle the case where we removed one or several sockets last time.
+        ++_pollStartIndex;
         if (_pollStartIndex > size - 1)
-            _pollStartIndex = size - 1;
+            _pollStartIndex = 0;
 
         std::vector<int> toErase;
 
         size_t i = _pollStartIndex;
-        LOG_TRC('#' << _pollFds[i].fd << ": Starting handling poll results of " << _name
-                    << " at index " << i << " (of " << size << "): " << std::hex
-                    << _pollFds[i].revents << std::dec);
-
         for (std::size_t j = 0; j < size; ++j)
         {
-            SocketDisposition disposition(_pollSockets[i]);
-            try
+            if (_pollFds[i].fd == _pollSockets[i]->getFD())
             {
-                _pollSockets[i]->handlePoll(disposition, newNow,
-                                            _pollFds[i].revents);
+                SocketDisposition disposition(_pollSockets[i]);
+                try
+                {
+                    LOG_TRC('#' << _pollFds[i].fd << ": Handling poll events of " << _name
+                                << " at index " << i << " (of " << size << "): 0x" << std::hex
+                                << _pollFds[i].revents << std::dec);
+
+                    _pollSockets[i]->handlePoll(disposition, newNow, _pollFds[i].revents);
+                }
+                catch (const std::exception& exc)
+                {
+                    LOG_ERR('#' << _pollFds[i].fd << ": Error while handling poll at " << i
+                                << " in " << _name << ": " << exc.what());
+                    disposition.setClosed();
+                    rc = -1;
+                }
+
+                if (!disposition.isContinue())
+                    toErase.push_back(i);
+
+                disposition.execute();
             }
-            catch (const std::exception& exc)
+            else
             {
-                LOG_ERR('#' << _pollFds[i].fd << ": Error while handling poll at " << i << " in "
-                            << _name << ": " << exc.what());
-                disposition.setClosed();
-                rc = -1;
+                LOG_DBG("Unexpected socket in the wrong position. Expected #"
+                        << _pollFds[i].fd << " at index " << i << " but found "
+                        << _pollSockets[i]->getFD() << " instead. Skipping");
+                assert(!"Unexpected socket at the wrong position");
             }
-
-            if (!disposition.isContinue())
-                toErase.push_back(i);
-
-            disposition.execute();
 
             if (i == 0)
                 i = size - 1;
             else
                 i--;
         }
+
         if (!toErase.empty())
         {
+            LOG_TRC("Removing " << toErase.size() << " socket" << (toErase.size() > 1 ? "s" : ""));
+            LOG_ASSERT(_pollSockets.size() > 0);
+            LOG_ASSERT(toErase.size() <= _pollSockets.size());
             std::sort(toErase.begin(), toErase.end(), [](int a, int b) { return a > b; });
             for (const int eraseIndex : toErase)
             {
                 LOG_TRC('#' << _pollFds[eraseIndex].fd << ": Removing socket (at " << eraseIndex
-                            << " of " << _pollSockets.size() << ") from " << _name);
+                            << " of " << _pollSockets.size() << ") from " << _name << " to have "
+                            << _pollSockets.size() - 1 << " sockets");
                 _pollSockets.erase(_pollSockets.begin() + eraseIndex);
             }
         }
-
-        // In case we removed sockets the new _pollStartIndex might be out of bounds, but we check it
-        // before using it above anyway.
-        _pollStartIndex = (_pollStartIndex + 1) % size;
     }
 
     return rc;
@@ -485,6 +508,35 @@ void SocketPoll::wakeupWorld()
 {
     for (const auto& fd : getWakeupsArray())
         wakeup(fd);
+}
+
+void SocketPoll::removeSockets()
+{
+    LOG_DBG("Removing all " << _pollSockets.size() + _newSockets.size()
+                            << " sockets from SocketPoll thread " << _name);
+    assertCorrectThread();
+
+    while (!_pollSockets.empty())
+    {
+        const std::shared_ptr<Socket>& socket = _pollSockets.back();
+        assert(socket);
+
+        LOG_DBG("Removing socket #" << socket->getFD() << " from " << _name);
+        ASSERT_CORRECT_SOCKET_THREAD(socket);
+        socket->resetThreadOwner();
+
+        _pollSockets.pop_back();
+    }
+
+    while (!_newSockets.empty())
+    {
+        const std::shared_ptr<Socket>& socket = _newSockets.back();
+        assert(socket);
+
+        LOG_DBG("Removing socket #" << socket->getFD() << " from newSockets of " << _name);
+
+        _newSockets.pop_back();
+    }
 }
 
 #if !MOBILEAPP
@@ -656,7 +708,7 @@ void SocketDisposition::execute()
     }
 }
 
-void WebSocketHandler::dumpState(std::ostream& os)
+void WebSocketHandler::dumpState(std::ostream& os) const
 {
     os << (_shuttingDown ? "shutd " : "alive ");
 #if !MOBILEAPP
@@ -735,7 +787,7 @@ bool StreamSocket::sendAndShutdown(http::Response& response)
     return false;
 }
 
-void SocketPoll::dumpState(std::ostream& os)
+void SocketPoll::dumpState(std::ostream& os) const
 {
     // FIXME: NOT thread-safe! _pollSockets is modified from the polling thread!
     os << "\n  SocketPoll:";
@@ -900,7 +952,8 @@ bool Socket::isLocal() const
         return true;
     if (_clientAddress == "::1")
         return true;
-    return  _clientAddress.rfind("127.0.0.", 0);
+    return  _clientAddress.rfind("::ffff:127.0.0.", 0) != std::string::npos ||
+                _clientAddress.rfind("127.0.0.", 0) != std::string::npos;
 }
 
 std::shared_ptr<Socket> LocalServerSocket::accept()
@@ -953,8 +1006,8 @@ std::shared_ptr<Socket> LocalServerSocket::accept()
         addr.append(std::to_string(CREDS_PID(creds)));
         _socket->setClientAddress(addr);
 
-        LOG_DBG("Accepted socket is UDS - address " << addr <<
-                " and uid/gid " << CREDS_UID(creds) << '/' << CREDS_GID(creds));
+        LOG_DBG("Accepted socket #" << rc << " is UDS - address " << addr << " and uid/gid "
+                                    << CREDS_UID(creds) << '/' << CREDS_GID(creds));
         return _socket;
     }
     catch (const std::exception& ex)

@@ -244,7 +244,7 @@ window.app = {
 				return true;
 			}
 
-			return L.Browser.mobile && (screen.width < 768 || screen.height < 768);
+			return L.Browser.mobile && (window.innerWidth < 768 || window.innerHeight < 768);
 		},
 		// Mobile device with big screen size.
 		isTablet: function() {
@@ -572,7 +572,7 @@ window.app = {
 			var hadData = this.sendQueue.length > 0;
 			this.sendQueue = this.sendQueue.concat(
 				'B0x' + this.outSerial.toString(16) + '\n' +
-				'0x' + msg.length.toString(16) + '\n' + msg + '\n');
+				'0x' + (new TextEncoder().encode(msg)).length.toString(16) + '\n' + msg + '\n');
 			this.outSerial++;
 
 			// Send ASAP, if we have throttled.
@@ -656,7 +656,13 @@ window.app = {
 			};
 			var sheets = document.styleSheets;
 			for (var i = 0; i < sheets.length; ++i) {
-				var relBases = sheets[i].href.split('/');
+				var relBases;
+				try {
+					relBases = sheets[i].href.split('/');
+				} catch (err) {
+					window.app.console.log('Missing href from CSS number ' + i);
+					continue;
+				}
 				relBases.pop(); // bin last - css name.
 				var replaceBase = 'url("' + relBases.join('/');
 
@@ -687,9 +693,6 @@ window.app = {
 		this.onopen = function () {};
 
 		this.close = function() {
-			this.innerSocket.onerror = function () {};
-			this.innerSocket.onclose = function () {};
-			this.innerSocket.onmessage = function () {};
 			this.innerSocket.close();
 		};
 
@@ -718,6 +721,9 @@ window.app = {
 				that.innerSocket.onclose = function() {
 					that.readyState = 3;
 					that.onclose();
+					that.innerSocket.onerror = function () {};
+					that.innerSocket.onclose = function () {};
+					that.innerSocket.onmessage = function () {};
 				};
 				that.innerSocket.onopen = function() {
 					that.readyState = 1;
@@ -891,6 +897,7 @@ window.app = {
 	}
 
 	var lang = encodeURIComponent(global.getParameterByName('lang'));
+	window.langParam = lang;
 	global.queueMsg = [];
 	if (window.ThisIsTheEmscriptenApp)
 		// Temporary hack

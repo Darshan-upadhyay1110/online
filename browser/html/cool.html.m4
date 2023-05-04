@@ -7,16 +7,18 @@ m4_define([_m4_foreachq],[m4_ifelse([$#],[3],[],[m4_define([$1],[$4])$2[]$0([$1]
 m4_define(_YEAR_,m4_esyscmd(date +%Y|tr -d '\n'))
 <!DOCTYPE html>
 <!-- saved from url=(0054)http://leafletjs.com/examples/quick-start-example.html -->
+m4_ifelse(IOSAPP,[true],
+<!-- Related to issue #5841: the iOS app sets the base text direction via the "dir" parameter -->
+<html dir="" style="height:100%"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+,
 <html %UI_RTL_SETTINGS% style="height:100%"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+)m4_dnl
 <title>Online Editor</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0 minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
 <script>
 m4_dnl# Define MOBILEAPP as true if this is either for the iOS app or for the gtk+ "app" testbed
-   window.welcomeUrl = '%WELCOME_URL%';
-   window.feedbackUrl = '%FEEDBACK_URL%';
-   window.buyProductUrl = '%BUYPRODUCT_URL%';
 m4_define([MOBILEAPP],[])
 m4_ifelse(IOSAPP,[true],[m4_define([MOBILEAPP],[true])])
 m4_ifelse(GTKAPP,[true],[m4_define([MOBILEAPP],[true])])
@@ -32,10 +34,14 @@ m4_ifelse(ANDROIDAPP,[true],[m4_define([MOBILEAPP],[true])])
 m4_ifelse(EMSCRIPTENAPP,[true],[m4_define([MOBILEAPP],[true])])
 
 m4_ifelse(MOBILEAPP,[],
+  window.welcomeUrl = '%WELCOME_URL%';
+  window.feedbackUrl = '%FEEDBACK_URL%';
+  window.buyProductUrl = '%BUYPRODUCT_URL%';
+
   // Start listening for Host_PostmessageReady message and save the
   // result for future
-    window.WOPIpostMessageReady = false;
-    var PostMessageReadyListener = function(e) {
+  window.WOPIpostMessageReady = false;
+  var PostMessageReadyListener = function(e) {
     if (!(e && e.data))
         return;
 
@@ -58,6 +64,11 @@ m4_dnl# and window.ThisIsTheGtkApp
 
 m4_ifelse(MOBILEAPP,[true],
   [   window.ThisIsAMobileApp = true;
+   // Fix issue #5841 by setting the welcome, feedback, and buy product URLs
+   // to empty for mobile
+   window.welcomeUrl = '';
+   window.feedbackUrl = '';
+   window.buyProductUrl = '';
    window.HelpFile = String.raw`m4_syscmd([cat html/cool-help.html])`;
    window.open = function (url, windowName, windowFeatures) {
      window.postMobileMessage('HYPERLINK ' + url); /* don't call the 'normal' window.open on mobile at all */
@@ -292,7 +303,7 @@ m4_ifelse(MOBILEAPP,[true],
     </div>
 
     <!-- Remove if you don't want the About dialog -->
-    <div id="about-dialog" style="display:none; user-select: text">
+    <div id="about-dialog" style="display:none; user-select: text" tabIndex="0">
       <div id="about-dialog-header">
         <fig id="integrator-logo"></fig>
         <h1 id="product-name">Collabora Online</h1>
@@ -312,7 +323,7 @@ m4_ifelse(MOBILEAPP,[true],
             <div style="margin-inline-end: auto;"><div id="lokit-version" dir="ltr"></div></div>
             m4_ifelse(MOBILEAPP,[],[<div id="served-by"><span id="served-by-label"></span>&nbsp;<span id="os-info"></span>&nbsp;<wbr><span id="coolwsd-id"></span></div>],[<p></p>])
             <div id="slow-proxy"></div>
-            m4_ifelse(DEBUG,[true],[<div id="js-dialog">JSDialogs: <a href="javascript:void(function() { window.vex.closeTop(); app.socket.sendMessage('uno .uno:WidgetTestDialog') }() )">View widgets</a></div>])
+            m4_ifelse(DEBUG,[true],[<div id="js-dialog">JSDialogs: <a href="javascript:void(function() { app.socket.sendMessage('uno .uno:WidgetTestDialog') }() )">View widgets</a></div>])
             <p style="margin-inline-end: auto;"><span dir="ltr">Copyright © _YEAR_, VENDOR.</span></p>
           </div>
         </div>
@@ -379,6 +390,11 @@ m4_ifelse(MOBILEAPP,[true],
 
 // This is GLOBAL_JS:
 m4_syscmd([cat ]GLOBAL_JS)m4_dnl
+
+// Related to issue #5841: the iOS app sets the base text direction via the
+// "dir" parameter
+m4_ifelse(IOSAPP,[true],
+     [document.dir = window.getParameterByName('dir');])
 
 m4_ifelse(IOSAPP,[true],
      [window.userInterfaceMode = window.getParameterByName('userinterfacemode');])

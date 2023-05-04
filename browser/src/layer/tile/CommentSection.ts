@@ -58,12 +58,10 @@ export class Comment extends CanvasSectionObject {
 		this.sectionProperties.data = data;
 		this.sectionProperties.annotationMarker = null;
 		this.sectionProperties.wrapper = null;
-		this.sectionProperties.collapsed = null;
 		this.sectionProperties.container = null;
 		this.sectionProperties.author = null;
 		this.sectionProperties.resolvedTextElement = null;
 		this.sectionProperties.authorAvatarImg = null;
-		this.sectionProperties.authorCollapsedAvatarImg = null;
 		this.sectionProperties.authorAvatartdImg = null;
 		this.sectionProperties.contentAuthor = null;
 		this.sectionProperties.contentDate = null;
@@ -95,6 +93,8 @@ export class Comment extends CanvasSectionObject {
 		this.name = data.id === 'new' ? 'new comment': 'comment ' + data.id;
 
 		this.sectionProperties.isRemoved = false;
+
+		this.convertRectanglesToCoreCoordinates(); // Convert rectangle coordiantes into core pixels on initialization.
 	}
 
 	// Comments import can be costly if the document has a lot of them. If they are all imported/initialized
@@ -104,7 +104,7 @@ export class Comment extends CanvasSectionObject {
 		if (!this.pendingInit)
 			return;
 
-		if (!force && !this.convertRectanglesToCoreCoordinates())
+		if (!force && !this.convertRectanglesToViewCoordinates())
 			return;
 
 		var button = L.DomUtil.create('div', 'annotation-btns-container', this.sectionProperties.nodeModify);
@@ -180,8 +180,6 @@ export class Comment extends CanvasSectionObject {
 		this.sectionProperties.container.style.visibility = 'hidden';
 
 		this.doPendingInitializationInView();
-
-		this.setExpanded();
 	}
 
 	private createContainerAndWrapper (): void {
@@ -197,9 +195,8 @@ export class Comment extends CanvasSectionObject {
 			this.sectionProperties.wrapper = L.DomUtil.create('div', 'cool-annotation-content-wrapper' + mobileClass, this.sectionProperties.container);
 		}
 
-		this.sectionProperties.collapsed = L.DomUtil.create('div', 'cool-annotation-collapsed', this.sectionProperties.container);
-
-		document.getElementById('document-container').appendChild(this.sectionProperties.container);
+		if (!(<any>window).mode.isMobile())
+			document.getElementById('document-container').appendChild(this.sectionProperties.container);
 	}
 
 	private createAuthorTable (): void {
@@ -219,22 +216,20 @@ export class Comment extends CanvasSectionObject {
 		var tdImg = L.DomUtil.create('td', 'cool-annotation-img', tr);
 		var tdAuthor = L.DomUtil.create('td', 'cool-annotation-author', tr);
 		var imgAuthor = L.DomUtil.create('img', 'avatar-img', tdImg);
+		if (this.sectionProperties.commentListSection.sectionProperties.commentsAreListed)
+			tdImg.style.visibility = 'visible';
 
 		imgAuthor.setAttribute('src', L.LOUtil.getImageURL('user.svg'));
 		imgAuthor.setAttribute('width', this.sectionProperties.imgSize[0]);
 		imgAuthor.setAttribute('height', this.sectionProperties.imgSize[1]);
 		imgAuthor.onerror = function () { imgAuthor.setAttribute('src', L.LOUtil.getImageURL('user.svg')); };
 
-		var imgCollapsedAuthor = L.DomUtil.create('img', 'avatar-img', this.sectionProperties.collapsed);
-		imgCollapsedAuthor.setAttribute('src', L.LOUtil.getImageURL('user.svg'));
-		imgCollapsedAuthor.setAttribute('width', this.sectionProperties.imgSize[0]);
-		imgCollapsedAuthor.setAttribute('height', this.sectionProperties.imgSize[1]);
-		imgCollapsedAuthor.onerror = function () { imgCollapsedAuthor.setAttribute('src', L.LOUtil.getImageURL('user.svg')); };
-		this.sectionProperties.replyCountNode = L.DomUtil.create('div', 'cool-annotation-reply-count-collapsed', this.sectionProperties.collapsed);
-		this.sectionProperties.replyCountNode.style.display = 'none';
+		if (this.sectionProperties.docLayer._docType === 'text') {
+			this.sectionProperties.replyCountNode = L.DomUtil.create('div', 'cool-annotation-reply-count-collapsed', tdImg);
+			this.sectionProperties.replyCountNode.style.display = 'none';
+		}
 
 		this.sectionProperties.authorAvatarImg = imgAuthor;
-		this.sectionProperties.authorCollapsedAvatarImg = imgCollapsedAuthor;
 		this.sectionProperties.authorAvatartdImg = tdImg;
 		this.sectionProperties.contentAuthor = L.DomUtil.create('div', 'cool-annotation-content-author', tdAuthor);
 		this.sectionProperties.contentDate = L.DomUtil.create('div', 'cool-annotation-date', tdAuthor);
@@ -244,7 +239,9 @@ export class Comment extends CanvasSectionObject {
 		var tdMenu = L.DomUtil.create('td', 'cool-annotation-menubar', this.sectionProperties.authorRow);
 		this.sectionProperties.menu = L.DomUtil.create('div', this.sectionProperties.data.trackchange ? 'cool-annotation-menu-redline' : 'cool-annotation-menu', tdMenu);
 		this.sectionProperties.menu.id = 'comment-annotation-menu-' + this.sectionProperties.data.id;
+		this.sectionProperties.menu.tabIndex = 0;
 		this.sectionProperties.menu.onclick = this.menuOnMouseClick.bind(this);
+		this.sectionProperties.menu.onfocus = function() { app.view.commentHasFocus = true; };
 		var divMenuTooltipText = _('Open menu');
 		this.sectionProperties.menu.dataset.title = divMenuTooltipText;
 		this.sectionProperties.menu.setAttribute('aria-label', divMenuTooltipText);
@@ -313,7 +310,6 @@ export class Comment extends CanvasSectionObject {
 		this.updateResolvedField(this.sectionProperties.data.resolved);
 		if (this.sectionProperties.data.avatar) {
 			this.sectionProperties.authorAvatarImg.setAttribute('src', this.sectionProperties.data.avatar);
-			this.sectionProperties.authorCollapsedAvatarImg.setAttribute('src', this.sectionProperties.data.avatar);
 		}
 		else {
 			$(this.sectionProperties.authorAvatarImg).css('padding-top', '4px');
@@ -458,9 +454,39 @@ export class Comment extends CanvasSectionObject {
 		return false;
 	}
 
+	/*
+		This function doesn't take topleft positions of sections into account.
+		This just returns bare pixel coordinates of the rectangles.
+	*/
+	private convertRectanglesToCoreCoordinates() {
+		var pixelBasedOrgRectangles = new Array<Array<number>>();
+
+		var originals = this.sectionProperties.data.rectanglesOriginal;
+		var ratio: number = (app.tile.size.pixels[0] / app.tile.size.twips[0]);
+		var pos: number[], size: number[];
+
+		if (originals) {
+			for (var i = 0; i < originals.length; i++) {
+				pos = [
+					Math.round(originals[i][0] * ratio),
+					Math.round(originals[i][1] * ratio)
+				];
+				size = [
+					Math.round(originals[i][2] * ratio),
+					Math.round(originals[i][3] * ratio)
+				];
+
+				pixelBasedOrgRectangles.push([pos[0], pos[1], size[0], size[1]]);
+			}
+
+			this.sectionProperties.pixelBasedOrgRectangles = pixelBasedOrgRectangles;
+		}
+	}
+
 	// This is for svg elements that will be bound to document-container.
 	// This also returns whether any rectangle has an intersection with the visible area/panes.
-	private convertRectanglesToCoreCoordinates () : boolean {
+	// This function calculates the core pixel coordinates then converts them into view coordinates.
+	private convertRectanglesToViewCoordinates () : boolean {
 		var rectangles = this.sectionProperties.data.rectangles;
 		var originals = this.sectionProperties.data.rectanglesOriginal;
 		var viewContext = this.map.getTileSectionMgr()._paintContext();
@@ -533,6 +559,7 @@ export class Comment extends CanvasSectionObject {
 	}
 
 	private updatePosition (): void {
+		this.convertRectanglesToViewCoordinates();
 		this.convertRectanglesToCoreCoordinates();
 		this.setPositionAndSize();
 	}
@@ -564,46 +591,12 @@ export class Comment extends CanvasSectionObject {
 	}
 
 	public isContainerVisible (): boolean {
-		return (this.sectionProperties.container.style && this.sectionProperties.container.style.visibility === '');
-	}
-
-	// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-	public updateScaling (scaleFactor: number, initialLayoutData: any): void {
-		if ((<any>window).mode.isDesktop())
-			return;
-
-		this.doPendingInitializationInView();
-
-		var wrapperWidth = Math.round(initialLayoutData.wrapperWidth * scaleFactor);
-		this.sectionProperties.wrapper.style.width = wrapperWidth + 'px';
-		var wrapperFontSize = Math.round(initialLayoutData.wrapperFontSize * scaleFactor);
-		this.sectionProperties.wrapper.style.fontSize = wrapperFontSize + 'px';
-		var contentAuthorHeight = Math.round(initialLayoutData.authorContentHeight * scaleFactor);
-		this.sectionProperties.contentAuthor.style.height = contentAuthorHeight + 'px';
-		var dateFontSize = Math.round(initialLayoutData.dateFontSize * scaleFactor);
-		this.sectionProperties.contentDate.style.fontSize = dateFontSize + 'px';
-		if (this.sectionProperties.menu) {
-			var menuWidth = Math.round(initialLayoutData.menuWidth * scaleFactor);
-			this.sectionProperties.menu.style.width = menuWidth + 'px';
-			var menuHeight = Math.round(initialLayoutData.menuHeight * scaleFactor);
-			this.sectionProperties.menu.style.height = menuHeight + 'px';
-
-			if (this.sectionProperties.acceptButton) {
-				this.sectionProperties.acceptButton.style.width = menuWidth + 'px';
-				this.sectionProperties.acceptButton.style.height = menuHeight + 'px';
-			}
-			if (this.sectionProperties.rejectButton) {
-				this.sectionProperties.rejectButton.style.width = menuWidth + 'px';
-				this.sectionProperties.rejectButton.style.height = menuHeight + 'px';
-			}
-		}
-
-		var authorImageWidth = Math.round(this.sectionProperties.imgSize[0] * scaleFactor);
-		var authorImageHeight = Math.round(this.sectionProperties.imgSize[1] * scaleFactor);
-		this.sectionProperties.authorAvatarImg.setAttribute('width', authorImageWidth);
-		this.sectionProperties.authorAvatarImg.setAttribute('height', authorImageHeight);
-		this.sectionProperties.authorCollapsedAvatarImg.setAttribute('width', authorImageWidth);
-		this.sectionProperties.authorCollapsedAvatarImg.setAttribute('height', authorImageHeight);
+		return this.sectionProperties.container.style &&
+			this.sectionProperties.container.style.display !== 'none' &&
+			(
+				this.sectionProperties.container.style.visibility === 'visible' ||
+				this.sectionProperties.container.style.visibility === ''
+			);
 	}
 
 	private update (): void {
@@ -625,32 +618,101 @@ export class Comment extends CanvasSectionObject {
 		}
 	}
 
-	private show (): void {
-		this.doPendingInitializationInView(true /* force */);
-		this.showMarker();
-
-		// On mobile, container shouldn't be 'document-container', but it is 'document-container' on initialization. So we hide the comment until comment wizard is opened.
-		if ((<any>window).mode.isMobile() && this.sectionProperties.container.parentElement === document.getElementById('document-container'))
-			this.sectionProperties.container.style.visibility = 'hidden';
-		else
-			this.sectionProperties.container.style.visibility = '';
+	private showWriter() {
+		if (!this.isCollapsed || this.isSelected()) {
+			if (this.isRootComment())
+				this.sectionProperties.container.style.visibility = '';
+			else
+				this.sectionProperties.container.style.display = '';
+		}
 
 		this.sectionProperties.contentNode.style.display = '';
 		this.sectionProperties.nodeModify.style.display = 'none';
 		this.sectionProperties.nodeReply.style.display = 'none';
+		this.sectionProperties.replyCountNode.style.visibility = '';
+		this.sectionProperties.showSelectedCoordinate = true;
+	}
 
-		this.sectionProperties.showSelectedCoordinate = true; // Writer.
+	private showCalc() {
+		this.sectionProperties.container.style.display = '';
+		this.sectionProperties.contentNode.style.display = '';
+		this.sectionProperties.nodeModify.style.display = 'none';
+		this.sectionProperties.nodeReply.style.display = 'none';
 
-		if (this.sectionProperties.docLayer._docType === 'spreadsheet' && !(<any>window).mode.isMobile()) {
+		if (!(<any>window).mode.isMobile()) {
 			var ratio: number = (app.tile.size.pixels[0] / app.tile.size.twips[0]);
 			var originalSize = [Math.round((this.sectionProperties.data.cellPos[2]) * ratio), Math.round((this.sectionProperties.data.cellPos[3]) * ratio)];
+
+			this.sectionProperties.container.style.visibility = '';
 
 			const commentWidth = parseFloat(getComputedStyle(this.sectionProperties.container).width) * app.dpiScale;
 			const startX = this.isCalcRTL() ? this.myTopLeft[0] - commentWidth : this.myTopLeft[0] + originalSize[0] - 3;
 
 			var pos: Array<number> = [Math.round(startX / app.dpiScale), Math.round(this.myTopLeft[1] / app.dpiScale)];
 			this.sectionProperties.container.style.transform = 'translate3d(' + pos[0] + 'px, ' + pos[1] + 'px, 0px)';
-			this.sectionProperties.commentListSection.selectedComment = this;
+			this.sectionProperties.commentListSection.select(this);
+		}
+	}
+
+	private showImpressDraw() {
+		if (this.isInsideActivePart()) {
+			this.sectionProperties.container.style.display = '';
+			this.sectionProperties.nodeModify.style.display = 'none';
+			this.sectionProperties.nodeReply.style.display = 'none';
+			this.sectionProperties.contentNode.style.display = '';
+			if (this.isSelected() || !this.isCollapsed) {
+				this.sectionProperties.container.style.visibility = '';
+			}
+			else {
+				this.sectionProperties.container.style.visibility = 'hidden';
+			}
+		}
+	}
+
+	private show(): void {
+		this.doPendingInitializationInView(true /* force */);
+		this.showMarker();
+
+		// On mobile, container shouldn't be 'document-container', but it is 'document-container' on initialization. So we hide the comment until comment wizard is opened.
+		if ((<any>window).mode.isMobile() && this.sectionProperties.container.parentElement === document.getElementById('document-container'))
+			this.sectionProperties.container.style.visibility = 'hidden';
+
+		if (this.sectionProperties.docLayer._docType === 'text')
+			this.showWriter();
+		else if (this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing')
+			this.showImpressDraw();
+		else if (this.sectionProperties.docLayer._docType === 'spreadsheet')
+			this.showCalc();
+	}
+
+	private hideWriter() {
+		this.sectionProperties.container.style.visibility = 'hidden';
+		this.sectionProperties.nodeModify.style.display = 'none';
+		this.sectionProperties.nodeReply.style.display = 'none';
+		this.sectionProperties.showSelectedCoordinate = false;
+	}
+
+	private hideCalc() {
+		this.sectionProperties.container.style.visibility = 'hidden';
+		this.sectionProperties.nodeModify.style.display = 'none';
+		this.sectionProperties.nodeReply.style.display = 'none';
+
+		if (this.sectionProperties.commentListSection.sectionProperties.selectedComment === this)
+			this.sectionProperties.commentListSection.sectionProperties.selectedComment = null;
+	}
+
+	private hideImpressDraw() {
+		if (!this.isInsideActivePart()) {
+			this.sectionProperties.container.style.display = 'none';
+			this.hideMarker();
+		}
+		else {
+			this.sectionProperties.container.style.display = '';
+			if (this.isCollapsed)
+				this.sectionProperties.container.style.visibility = 'hidden';
+
+			this.sectionProperties.nodeModify.style.display = 'none';
+			this.sectionProperties.nodeReply.style.display = 'none';
 		}
 	}
 
@@ -660,17 +722,17 @@ export class Comment extends CanvasSectionObject {
 			return;
 		}
 
-		this.sectionProperties.container.style.visibility = 'hidden';
-		//this.sectionProperties.contentNode.style.display = 'none';
-		this.sectionProperties.nodeModify.style.display = 'none';
-		this.sectionProperties.nodeReply.style.display = 'none';
+		if (this.sectionProperties.docLayer._docType === 'text')
+			this.hideWriter();
+		else if (this.sectionProperties.docLayer._docType === 'spreadsheet')
+			this.hideCalc();
+		else if (this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing')
+			this.hideImpressDraw();
+	}
 
-		this.sectionProperties.showSelectedCoordinate = false; // Writer.
-
-		if (this.sectionProperties.docLayer._docType === 'spreadsheet' && this.sectionProperties.commentListSection.sectionProperties.selectedComment === this)
-			this.sectionProperties.commentListSection.sectionProperties.selectedComment = null;
-
-		this.hideMarker();
+	private isInsideActivePart() {
+		// Impress and Draw only.
+		return this.sectionProperties.partIndex === this.sectionProperties.docLayer._selectedPart;
 	}
 
 	// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
@@ -702,7 +764,7 @@ export class Comment extends CanvasSectionObject {
 	// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
 	public onReplyClick (e: any): void {
 		L.DomEvent.stopPropagation(e);
-		if ((<any>window).mode.isMobile() || (<any>window).mode.isTablet()) {
+		if ((<any>window).mode.isMobile()) {
 			this.sectionProperties.data.reply = this.sectionProperties.data.text;
 			this.sectionProperties.commentListSection.saveReply(this);
 		} else {
@@ -847,6 +909,10 @@ export class Comment extends CanvasSectionObject {
 		this.updatePosition();
 	}
 
+	private isSelected(): boolean {
+		return this.sectionProperties.commentListSection.sectionProperties.selectedComment === this;
+	}
+
 	// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
 	private doesRectangleContainPoint (rectangle: any, point: Array<number>): boolean {
 		if (point[0] >= rectangle[0] && point[0] <= rectangle[0] + rectangle[2]) {
@@ -857,22 +923,62 @@ export class Comment extends CanvasSectionObject {
 		return false;
 	}
 
-	public onClick (point: Array<number>, e: MouseEvent): void {
-		if (this.sectionProperties.docLayer._docType === 'text') {
-			var rectangles = this.sectionProperties.data.rectangles;
-			point[0] = point[0] + this.myTopLeft[0];
-			point[1] = point[1] + this.myTopLeft[1];
-			if (rectangles) { // A text file.
-				for (var i: number = 0; i < rectangles.length; i++) {
-					if (this.doesRectangleContainPoint(rectangles[i], point)) {
-						this.sectionProperties.commentListSection.selectById(this.sectionProperties.data.id);
-						e.stopPropagation();
-						this.stopPropagating();
-					}
+	/*
+		point is the core pixel coordinate of the cursor.
+		Not adjusted according to the view.
+		For adjusting, we need to take document top left and documentAnchor top left into account.
+		No need to do that for now.
+	*/
+	private checkIfCursorIsOnThisCommentWriter(rectangles: any, point: Array<number>) {
+		for (var i: number = 0; i < rectangles.length; i++) {
+			if (this.doesRectangleContainPoint(rectangles[i], point)) {
+				if (!this.isSelected()) {
+					this.sectionProperties.commentListSection.selectById(this.sectionProperties.data.id);
 				}
+				this.stopPropagating();
+				return;
 			}
 		}
-		else if (this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing') {
+
+		// If we are here, this comment is not selected.
+		if (this.isSelected()) {
+			if (this.isCollapsed)
+				this.setCollapsed();
+			this.sectionProperties.commentListSection.unselect();
+		}
+	}
+
+	/// This event is Writer-only. Fired by CanvasSectionContainer.
+	public onCursorPositionChanged(newPosition: Array<number>): void {
+		var x = newPosition[0];
+		var y = Math.round(newPosition[1] + (newPosition[3]) * 0.5);
+		if (this.sectionProperties.pixelBasedOrgRectangles) {
+			this.checkIfCursorIsOnThisCommentWriter(this.sectionProperties.pixelBasedOrgRectangles, [x, y]);
+		}
+	}
+
+	/// This event is Calc-only. Fired by CanvasSectionContainer.
+	public onCellAddressChanged(cursorInfo: any): void {
+		if (cursorInfo.rectangle.pixels && this.sectionProperties.data.rectangles) {
+			var midX = this.containerObject.getDocumentAnchor()[0] + Math.round(cursorInfo.rectangle.pixels[0] + (cursorInfo.rectangle.pixels[2]) * 0.5);
+			var midY = this.containerObject.getDocumentAnchor()[1] + Math.round(cursorInfo.rectangle.pixels[1] + (cursorInfo.rectangle.pixels[3]) * 0.5);
+
+			if (midX > this.sectionProperties.data.rectangles[0][0] && midX < this.sectionProperties.data.rectangles[0][0] + this.sectionProperties.data.rectangles[0][2]
+				&& midY > this.sectionProperties.data.rectangles[0][1] && midY < this.sectionProperties.data.rectangles[0][1] + this.sectionProperties.data.rectangles[0][3]) {
+				this.sectionProperties.commentListSection.sectionProperties.calcCurrentComment = this;
+			}
+			else if (this.isSelected()) {
+				this.hide();
+				app.view.commentHasFocus = false;
+				this.sectionProperties.commentListSection.sectionProperties.calcCurrentComment = null;
+			}
+			else if (this.sectionProperties.commentListSection.sectionProperties.calcCurrentComment == this)
+				this.sectionProperties.commentListSection.sectionProperties.calcCurrentComment = null;
+		}
+	}
+
+	public onClick (point: Array<number>, e: MouseEvent): void {
+		if (this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing') {
 			this.sectionProperties.commentListSection.selectById(this.sectionProperties.data.id);
 			e.stopPropagation();
 			this.stopPropagating();
@@ -991,8 +1097,8 @@ export class Comment extends CanvasSectionObject {
 
 		this.sectionProperties.commentListSection.hideArrow();
 		var container = this.sectionProperties.container;
+		this.hideMarker();
 		if (container && container.parentElement) {
-			this.hideMarker();
 			var c: number = 0;
 			while (c < 10) {
 				try {
@@ -1006,22 +1112,36 @@ export class Comment extends CanvasSectionObject {
 		}
 	}
 
+	private isRootComment() {
+		return this.sectionProperties.data.parent === '0';
+	}
+
 	public setCollapsed(): void {
 		this.isCollapsed = true;
 
-		var isRootComment = this.sectionProperties.docLayer._docType !== 'text' || this.sectionProperties.data.parent === '0';
-		if (isRootComment || this.sectionProperties.data.trackchange)
-			this.sectionProperties.collapsed.style.display = '';
-		else
-			this.sectionProperties.collapsed.style.display = 'none';
+		if (this.isRootComment() || this.sectionProperties.docLayer._docType === 'presentation' || this.sectionProperties.docLayer._docType === 'drawing') {
+			this.sectionProperties.container.style.visibility = 'hidden';
 
-		this.sectionProperties.wrapper.style.display = 'none';
+			if (this.sectionProperties.docLayer._docType === 'text') {
+				if (this.sectionProperties.replyCountNode.innerText !== '')
+					this.sectionProperties.replyCountNode.style.display = '';
+				else
+					this.sectionProperties.replyCountNode.style.display = 'none';
+			}
+		}
+		else {
+			this.sectionProperties.container.style.display = 'none';
+			if (this.sectionProperties.docLayer._docType === 'text')
+				this.sectionProperties.replyCountNode.style.display = 'none';
+		}
 	}
 
 	public setExpanded(): void {
 		this.isCollapsed = false;
-		this.sectionProperties.collapsed.style.display = 'none';
-		this.sectionProperties.wrapper.style.display = '';
+		this.sectionProperties.container.style.display = '';
+		this.sectionProperties.container.style.visibility = '';
+		if (this.sectionProperties.docLayer._docType === 'text')
+			this.sectionProperties.replyCountNode.style.display = 'none';
 	}
 }
 

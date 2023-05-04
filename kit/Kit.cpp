@@ -146,6 +146,8 @@ static std::string JailRoot;
 static void flushTraceEventRecordings();
 #endif
 
+
+
 // Abnormally we get LOK events from another thread, which must be
 // push safely into our main poll loop to process to keep all
 // socket buffer & event processing in a single, thread.
@@ -157,6 +159,36 @@ static LokHookFunction2* initFunction = nullptr;
 
 namespace
 {
+    // for later consistency checking.
+    static std::string UserDirPath;
+    static std::string InstDirPath;
+
+    std::string pathFromFileURL(const std::string &uri)
+    {
+        std::string decoded;
+        Poco::URI::decode(uri, decoded);
+        if (decoded.rfind("file://", 0) != 0)
+        {
+            LOG_ERR("Asked to load a very unusual file path: '" << uri << "' -> '" << decoded << "'");
+            return std::string();
+        }
+        return decoded.substr(7);
+    }
+
+    void consistencyCheckFileExists(const std::string &uri)
+    {
+        std::string path = pathFromFileURL(uri);
+        if (path.empty())
+            return;
+        FileUtil::Stat stat(path);
+        if (!stat.good() && stat.isFile())
+            LOG_ERR("Fatal system error: created file passed into document doesn't exist: '" << path << "'");
+        else
+            LOG_TRC("File path '" << path << "' exists of length " << stat.size());
+
+        consistencyCheckJail();
+    }
+
 #ifndef BUILDING_TESTS
     enum class LinkOrCopyType
     {
@@ -730,7 +762,7 @@ public:
         return true;
     }
 
-    bool createSession(const std::string& sessionId, int canonicalViewId)
+    bool createSession(const std::string& sessionId)
     {
         try
         {
@@ -749,7 +781,6 @@ public:
                 _jailId, JailRoot, *this);
             _sessions.emplace(sessionId, session);
             _deltaGen.setSessionCount(_sessions.size());
-            session->setCanonicalViewId(canonicalViewId);
 
             const int viewId = session->getViewId();
             _lastUpdatedAt[viewId] = std::chrono::steady_clock::now();
@@ -757,6 +788,7 @@ public:
 
             LOG_DBG("Have " << _sessions.size() << " active sessions after creating "
                             << session->getId());
+            LOG_INF("New session [" << sessionId << "]");
             return true;
         }
         catch (const std::exception& ex)
@@ -878,11 +910,9 @@ public:
             return;
         }
 
-#ifdef FIXME_RENDER_SETTINGS
         // if necessary select a suitable rendering view eg. with 'show non-printing chars'
         if (tileCombined.getNormalizedViewId())
             _loKitDocument->setView(session->getViewId());
-#endif
 
         const auto blenderFunc = [&](unsigned char* data, int offsetX, int offsetY,
                                      std::size_t pixmapWidth, std::size_t pixmapHeight,
@@ -933,6 +963,25 @@ public:
     unsigned getMobileAppDocId() const override
     {
         return _mobileAppDocId;
+    }
+
+    void trimIfInactive() override
+    {
+        LOG_TRC("Should we trim our caches ?");
+        // FIXME: multi-document mobile optimization ?
+        for (auto it : _sessions)
+        {
+            if (it.second->isActive())
+            {
+                LOG_TRC("have active session, don't trim");
+                return;
+            }
+        }
+        // FIXME: be more clever - detect if we rendered recently,
+        // measure memory pressure etc.
+        LOG_WRN("Sessions are all inactive - trim memory");
+        _loKit->trimMemory(4096);
+        _deltaGen.dropCache();
     }
 
     static void GlobalCallback(const int type, const char* p, void* data)
@@ -1079,6 +1128,29 @@ public:
 
                 tileQueue->updateCursorPosition(std::stoi(targetViewId), std::stoi(part), cursorX, cursorY, cursorWidth, cursorHeight);
             }
+        }
+        else if (type == LOK_CALLBACK_VIEW_RENDER_STATE)
+        {
+            Document* document = dynamic_cast<Document*>(descriptor->getDoc());
+            if (document)
+            {
+                std::shared_ptr<ChildSession> session = document->findSessionByViewId(descriptor->getViewId());
+                if (session)
+                {
+                    session->setViewRenderState(payload);
+                    document->invalidateCanonicalId(session->getId());
+                }
+                else
+                {
+                    LOG_ERR("Cannot find session for viewId: " << descriptor->getViewId());
+                }
+            }
+            else
+            {
+                // This shouldn't happen, but for consistency.
+                LOG_ERR("Failed to downcast DocumentManagerInterface to Document");
+            }
+            return;
         }
 
         // merge various callback types together if possible
@@ -1297,6 +1369,39 @@ private:
         }
     }
 
+    std::shared_ptr<ChildSession> findSessionByViewId(int viewId)
+    {
+        for (const auto& it : _sessions)
+        {
+            if (it.second && it.second->getViewId() == viewId)
+                return it.second;
+        }
+
+        return nullptr;
+    }
+
+    void invalidateCanonicalId(const std::string& sessionId)
+    {
+        auto it = _sessions.find(sessionId);
+        if (it == _sessions.end())
+        {
+            LOG_ERR("Session [" << sessionId << "] not found");
+            return;
+        }
+        std::shared_ptr<ChildSession> session = it->second;
+        int newCanonicalId = _sessions.createCanonicalId(getViewProps(session));
+        if (newCanonicalId == session->getCanonicalViewId())
+            return;
+        session->setCanonicalViewId(newCanonicalId);
+        std::string message = "canonicalidchange: viewid=" + std::to_string(session->getViewId()) + " canonicalid=" + std::to_string(newCanonicalId);
+        session->sendTextFrame(message);
+    }
+
+    std::string getViewProps(const std::shared_ptr<ChildSession>& session)
+    {
+        return session->getWatermarkText() + "|" + session->getViewRenderState();
+    }
+
     void updateEditorSpeeds(int id, int speed) override
     {
         int maxSpeed = -1, fastestUser = -1;
@@ -1398,6 +1503,10 @@ private:
         const std::string& macroSecurityLevel = session->getMacroSecurityLevel();
         const std::string& userTimezone = session->getTimezone();
 
+#if !MOBILEAPP
+        consistencyCheckFileExists(uri);
+#endif
+
         std::string options;
         if (!lang.empty())
             options = "Language=" + lang;
@@ -1480,6 +1589,7 @@ private:
                 }
 
                 session->sendTextFrameAndLogError("error: cmd=load kind=faileddocloading");
+                session->shutdownNormal();
 
                 LOG_FTL("Failed to load the document. Setting TerminationFlag");
                 SigUtil::setTerminationFlag();
@@ -1551,6 +1661,7 @@ private:
 
         session->initWatermark();
 
+        invalidateCanonicalId(sessionId);
         return _loKitDocument;
     }
 
@@ -2010,7 +2121,7 @@ static void flushTraceEventRecordings()
     {
         std::vector<std::string> &r = traceEventRecords[n];
 
-        if (r.size() == 0)
+        if (r.empty())
             return;
 
         std::size_t totalLength = 0;
@@ -2354,13 +2465,11 @@ protected:
             const std::string& sessionId = tokens[1];
             _docKey = tokens[2];
             const std::string& docId = tokens[3];
-            const int canonicalViewId = std::stoi(tokens[4]);
             const std::string fileId = Util::getFilenameFromURL(_docKey);
             Util::mapAnonymized(fileId, fileId); // Identity mapping, since fileId is already obfuscated
 
             std::string url;
             URI::decode(_docKey, url);
-            LOG_INF("New session [" << sessionId << "] request on url [" << url << "] with viewId " << canonicalViewId);
 #ifndef IOS
             Util::setThreadName("kit" SHARED_DOC_THREADNAME_SUFFIX + docId);
 #endif
@@ -2385,7 +2494,7 @@ protected:
             }
 
             // Validate and create session.
-            if (!(url == _document->getUrl() && _document->createSession(sessionId, canonicalViewId)))
+            if (!(url == _document->getUrl() && _document->createSession(sessionId)))
             {
                 LOG_DBG("CreateSession failed.");
             }
@@ -2501,7 +2610,7 @@ int pollCallback(void* pData, int timeoutUs)
             v.push_back(p);
     }
     lock.unlock();
-    if (v.size() == 0)
+    if (v.empty())
     {
         std::this_thread::sleep_for(std::chrono::microseconds(timeoutUs));
     }
@@ -2526,7 +2635,7 @@ void wakeCallback(void* pData)
         return reinterpret_cast<KitSocketPoll*>(pData)->wakeup();
 #else
     std::unique_lock<std::mutex> lock(KitSocketPoll::KSPollsMutex);
-    if (KitSocketPoll::KSPolls.size() == 0)
+    if (KitSocketPoll::KSPolls.empty())
         return;
 
     std::vector<std::shared_ptr<KitSocketPoll>> v;
@@ -2732,7 +2841,7 @@ void lokit_main(
                 if (!mountJail())
                 {
                     LOG_INF("Cleaning up jail before linking/copying.");
-                    JailUtil::removeJail(jailPathStr);
+                    JailUtil::tryRemoveJail(jailPathStr);
                     bindMount = false;
                     JailUtil::disableBindMounting();
                 }
@@ -2825,6 +2934,9 @@ void lokit_main(
 
         LOG_DBG("Initializing LOK with instdir [" << instdir_path << "] and userdir ["
                                                   << userdir_url << "].");
+
+        UserDirPath = pathFromFileURL(userdir_url);
+        InstDirPath = instdir_path;
 
         LibreOfficeKit *kit;
         {
@@ -3052,6 +3164,42 @@ void runKitLoopInAThread()
 #endif // IOS
 
 #endif // !BUILDING_TESTS
+
+#if !MOBILEAPP
+
+void consistencyCheckJail()
+{
+    static bool warned = false;
+    if (!warned)
+    {
+        bool failedTmp, failedLo, failedUser;
+        FileUtil::Stat tmp("/tmp");
+        if ((failedTmp = (!tmp.good() || !tmp.isDirectory())))
+            LOG_ERR("Fatal system error: Kit jail is missing its /tmp directory");
+
+        FileUtil::Stat lo(InstDirPath + "/unorc");
+        if ((failedLo = (!lo.good() || !lo.isFile())))
+            LOG_ERR("Fatal system error: Kit jail is missing its LibreOfficeKit directory at '" << InstDirPath << "'");
+
+        FileUtil::Stat user(UserDirPath);
+        if ((failedUser = (!user.good() || !user.isDirectory())))
+            LOG_ERR("Fatal system error: Kit jail is missing its user directory at '" << UserDirPath << "'");
+
+        if (failedTmp || failedLo || failedUser)
+        {
+            LOG_ERR("A fatal system error indicates that, outside the control of COOL "
+                    "major structural changes have occured in our filesystem. These are "
+                    "potentially indicative of an operator damaging the system, and will "
+                    "inevitably cause document data-loss and/or malfunction.");
+            warned = true;
+            assert(!"Fatal system error with jail setup.");
+        }
+        else
+            LOG_TRC("Passed system consistency check");
+    }
+}
+
+#endif // !MOBILEAPP
 
 std::string anonymizeUrl(const std::string& url)
 {

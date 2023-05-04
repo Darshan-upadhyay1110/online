@@ -36,7 +36,7 @@ class TraceFileWriter;
 class DocumentBroker;
 class ClipboardCache;
 
-std::shared_ptr<ChildProcess> getNewChild_Blocks(unsigned mobileAppDocId = 0);
+std::shared_ptr<ChildProcess> getNewChild_Blocks(unsigned mobileAppDocId);
 
 // A WSProcess object in the WSD process represents a descendant process, either the direct child
 // process ForKit or a grandchild Kit process, with which the WSD process communicates through a
@@ -123,7 +123,7 @@ public:
         if (::kill(_pid, 0) == 0)
         {
             LOG_INF("Killing child [" << _pid << "].");
-#if CODE_COVERAGE
+#if CODE_COVERAGE || VALGRIND_COOLFORKIT
             constexpr auto signal = SIGTERM;
 #else
             constexpr auto signal = SIGKILL;
@@ -251,6 +251,7 @@ public:
     static std::string RouteToken;
 #if ENABLE_DEBUG
     static bool SingleKit;
+    static bool ForceCaching;
 #endif
     static std::shared_ptr<ForKitProcess> ForKitProc;
     static std::atomic<int> ForKitProcId;
@@ -260,6 +261,7 @@ public:
     static std::string ConfigDir;
     static std::string SysTemplate;
     static std::string LoTemplate;
+    static std::string CleanupChildRoot;
     static std::string ChildRoot;
     static std::string ServerName;
     static std::string FileServerRoot;
