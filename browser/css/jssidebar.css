@@ -357,11 +357,11 @@ button#button2.ui-pushbutton.jsdialog.sidebar {
 	width: var(--btn-size-s);
 	height: var(--btn-size-s);
 }
-#NavigatorDeck .ui-treeview-entry.selected:not(.ui-treeview-expandable) {
+#NavigatorDeck .ui-treeview-entry.selected.ui-listview-expandable {
 	background-color: var(--color-background-dark);
 	color: var(--color-primary);
 }
-#NavigatorDeck .ui-treeview-entry.selected:not(.ui-treeview-expandable)::before {
+#NavigatorDeck .ui-treeview-entry.selected.ui-listview-expandable::before {
 	content: '–';
 	font-size: 17px;
 	font-weight: 500;
